@@ -82,14 +82,19 @@ export const commitRecommendation = (map, optionIndex) => {
   });
 };
 
-const settleTaken = (nodes, fromId, toId) =>
+/**
+ * Records what came of the branch just walked. An option that led nowhere, or
+ * looped back to somewhere already known, is not a lead any more — and saying
+ * so is what stops an explorer trying the same wrong turn twice.
+ */
+const settleTaken = (nodes, fromId, toId, outcome) =>
   nodes.map((node) => {
     if (node.id !== fromId) return node;
     return Object.freeze({
       ...node,
       options: Object.freeze(node.options.map((option) =>
         option.status === "taken-pending"
-          ? Object.freeze({ ...option, status: "taken", leadsTo: toId })
+          ? Object.freeze({ ...option, status: "taken", leadsTo: toId, outcome })
           : option)),
     });
   });
@@ -99,12 +104,18 @@ export const addSurvey = (map, survey, { heading, steps }) => {
   const previousId = map.currentNodeId;
   const stepsWalked = Math.max(0, steps - map.steps);
   const known = survey.same_as_node_id ? findNode(map, survey.same_as_node_id) : null;
+  const isDeadEnd = (survey.options ?? []).length === 0;
 
   if (known) {
-    // Loop closure: link back instead of adding a duplicate place.
+    // Loop closure: link back instead of adding a duplicate place, and record
+    // that the branch merely came back to somewhere already mapped.
     return Object.freeze({
       ...map,
-      nodes: Object.freeze(settleTaken(map.nodes, previousId, known.id)),
+      nodes: Object.freeze(
+        settleTaken(map.nodes, previousId, known.id, "loops-back")
+          .map((node) => node.id === known.id
+            ? Object.freeze({ ...node, visits: (node.visits ?? 1) + 1 })
+            : node)),
       currentNodeId: known.id,
       heading,
       steps,
@@ -118,6 +129,8 @@ export const addSurvey = (map, survey, { heading, steps }) => {
     features: Object.freeze(survey.here.features ?? []),
     distinctiveness: survey.here.distinctiveness ?? 0,
     options: buildOptions(survey.options),
+    visits: 1,
+    isDeadEnd,
     heading,
     steps,
     ...position,
@@ -125,7 +138,10 @@ export const addSurvey = (map, survey, { heading, steps }) => {
 
   return Object.freeze({
     ...map,
-    nodes: Object.freeze([...settleTaken(map.nodes, previousId, node.id), node]),
+    nodes: Object.freeze([
+      ...settleTaken(map.nodes, previousId, node.id, isDeadEnd ? "dead-end" : "open"),
+      node,
+    ]),
     currentNodeId: node.id,
     heading,
     steps,
@@ -137,6 +153,7 @@ export const trackMotion = (map, { steps, heading }) =>
     ? map
     : Object.freeze({ ...map, steps, heading });
 
+/** Leads worth trying: never walked, and not already known to fail. */
 export const unexploredCount = (map) =>
   map.nodes.reduce(
     (total, node) => total + node.options.filter((option) => option.status === "unexplored").length,
@@ -151,10 +168,12 @@ export const toServerNodes = (map) =>
     features: node.features,
     steps: node.steps,
     is_current: node.id === map.currentNodeId,
+    times_visited: node.visits ?? 1,
     options: node.options.map((option) => ({
       bearing: Number.isFinite(option.bearing) ? Math.round(option.bearing) : 0,
       description: option.description,
       status: option.status === "taken-pending" ? "taken" : option.status,
       leads_to: option.leadsTo ?? null,
+      outcome: option.outcome ?? null,
     })),
   }));

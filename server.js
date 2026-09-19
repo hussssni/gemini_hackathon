@@ -19,6 +19,8 @@ const optionRecord = z.object({
   description: z.string(),
   status: z.enum(["unexplored", "taken"]),
   leads_to: z.string().nullable().default(null),
+  // What came of walking it, so already-failed branches are never suggested.
+  outcome: z.enum(["open", "dead-end", "loops-back"]).nullable().default(null),
 });
 
 const nodeRecord = z.object({
@@ -27,6 +29,7 @@ const nodeRecord = z.object({
   features: z.array(z.string()).default([]),
   steps: z.number().int().nonnegative(),
   is_current: z.boolean().default(false),
+  times_visited: z.number().int().positive().default(1),
   options: z.array(optionRecord).default([]),
 });
 

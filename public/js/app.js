@@ -6,6 +6,7 @@ import { survey } from "./api.js";
 import { drawMap } from "./map.js";
 import { createMarker } from "./marker.js";
 import { primeSpeech, speak, stopSpeaking } from "./speech.js";
+import { bearingDelta, directionSentence, turnPhrase } from "./guidance.js";
 import {
   addSurvey, commitRecommendation, emptyMap, fromSaved,
   toServerNodes, trackMotion, unexploredCount,
@@ -18,6 +19,9 @@ import {
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Long enough that turning slowly does not produce a stream of instructions.
+const GUIDANCE_MIN_GAP_MS = 1500;
+
 const camera = createCamera(elements.video);
 const budget = createBudget();
 const marker = createMarker({
@@ -29,6 +33,7 @@ const marker = createMarker({
 let map = emptyMap();
 let lastSurvey = null;
 let surveying = false;
+let guidance = { zone: null, spokenAt: 0 };
 
 function render() {
   renderStats(map, unexploredCount(map));
@@ -37,12 +42,28 @@ function render() {
   });
 }
 
+/**
+ * Speaks the turn as the explorer rotates, but only when the instruction
+ * genuinely changes. Someone who cannot see the marker is steering entirely by
+ * this, and repeating "turn left" every tick would drown out everything else.
+ */
+function announceTurn(state) {
+  if (!state || surveying) return;
+
+  const changed = state.zone !== guidance.zone;
+  const settled = Date.now() - guidance.spokenAt > GUIDANCE_MIN_GAP_MS;
+  if (!changed || !settled) return;
+
+  guidance = { zone: state.zone, spokenAt: Date.now() };
+  speak(state.aligned ? "Straight ahead, go now" : turnPhrase(state.delta));
+}
+
 const sensors = createSensorTracker({
   onUpdate: (snapshot) => {
     map = trackMotion(map, snapshot);
     // Redrawing the marker on every heading tick is what keeps it pinned to the
     // world rather than the screen.
-    marker.update(snapshot.heading);
+    announceTurn(marker.update(snapshot.heading));
     render();
   },
   onError: showError,
@@ -125,24 +146,30 @@ async function lookAround() {
 
     lastSurvey = result;
     renderSurvey(result, map);
-    speak(result.spoken);
 
     if (result.arrived) {
       marker.clear();
       clearArrived();
       showArrived(destination);
+      speak(`You have reached ${destination}. ${result.spoken}`);
       setStatus("You made it", "good");
     } else if (result.recommendation) {
       // The bearing came from the compass reading of the photo the exit appears
       // in, so the marker points where the camera actually saw it.
       marker.setTarget(result.recommendation.bearing, "Go this way");
-      marker.update(map.heading);
+      // Lead with the turn, measured from where they are actually standing, so
+      // the first thing heard is something to do rather than something to see.
+      const delta = bearingDelta(result.recommendation.bearing, map.heading);
+      speak(directionSentence(delta, result.spoken));
+      guidance = { zone: null, spokenAt: Date.now() };
+      announceTurn(marker.update(map.heading));
       clearArrived();
       setStatus("Follow the marker, then look around again", "good");
     } else {
       marker.clear();
       clearArrived();
-      setStatus("No way forward from here — go back", "warn");
+      speak(`Dead end. ${result.spoken} Go back the way you came.`);
+      setStatus("Dead end — go back", "warn");
     }
 
     render();
@@ -180,7 +207,11 @@ elements.lookButton.addEventListener("click", () => {
   lookAround();
 });
 elements.replayButton.addEventListener("click", () => {
-  if (lastSurvey) speak(lastSurvey.spoken);
+  if (!lastSurvey) return;
+  const bearing = lastSurvey.recommendation?.bearing;
+  speak(bearing === undefined
+    ? lastSurvey.spoken
+    : directionSentence(bearingDelta(bearing, map.heading), lastSurvey.spoken));
 });
 elements.resetButton.addEventListener("click", reset);
 elements.stepButton.addEventListener("click", () =>

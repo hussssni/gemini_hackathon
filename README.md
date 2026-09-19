@@ -30,9 +30,32 @@ The map grows a node at a time. Dashed stubs show the ways nobody has taken yet,
 at a glance you can see where there is still left to try — and the highlighted one is
 what Gemini suggests next.
 
+### Built to be used without looking
+
+Every instruction the app speaks is egocentric and imperative: "Turn left, then go
+straight", "Turn around and go back the way you came". The turn is measured from
+the phone's compass at the moment you hear it, so it is right however you happen to
+be standing, and it is spoken again each time you cross into a new turn — slightly
+left, left, sharp left — so you can steer by sound alone until you hear "straight
+ahead, go now".
+
+Gemini is told not to give directions at all, since it cannot know which way you
+are facing. It describes what is around you in terms you could hear, feel or walk
+into — a slope, a doorway, gravel underfoot, traffic noise — and calls out steps,
+drops, water or a road to cross. The app supplies the turn.
+
+Anything directly behind you is neither left nor right, and near 180 degrees the
+difference flips on the smallest movement. Rather than let the marker jump between
+edges, that whole band is one instruction: turn around.
+
 ### It remembers
 
-The map is saved on the device, so somewhere you explored before is somewhere it
+Every way out is remembered along with what became of it: never walked, led
+somewhere new, dead-ended, or looped back to somewhere already mapped. Come back to
+a junction you have stood at before and it recognises it, tells you which ways have
+already failed, and sends you down one that has not been tried.
+
+The map is saved on the device too, so somewhere you explored before is somewhere it
 already knows. Walk back in, look around, and Gemini recognises the place from the
 saved description — you are located on the old map without retracing anything, and
 a destination already recorded becomes a route over known ground rather than a
@@ -118,6 +141,7 @@ the two worth calibrating on a real phone before demoing.
 | [public/js/graph.js](public/js/graph.js) | Immutable map of places, leads and links |
 | [public/js/map.js](public/js/map.js) | Canvas renderer, including unexplored leads |
 | [public/js/marker.js](public/js/marker.js) | Compass-anchored direction marker |
+| [public/js/guidance.js](public/js/guidance.js) | Bearings into spoken turns |
 | [public/js/storage.js](public/js/storage.js) | Saving the map between visits |
 | [public/js/app.js](public/js/app.js) | The look-around loop |
 
