@@ -91,19 +91,88 @@ h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color
 .stats dt { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
 .stats dd { margin: 2px 0 0; font-size: 1.3rem; font-variant-numeric: tabular-nums; }
 
-.destination { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 14px; }
-.destination input {
+.target {
+  display: block;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.target-label {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+.target input {
   display: block;
   width: 100%;
-  margin-top: 6px;
-  padding: 11px 12px;
-  border-radius: 11px;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  padding: 0;
+  border: none;
+  background: none;
   color: var(--text);
   font: inherit;
+  font-size: 1.05rem;
+  font-weight: 600;
 }
-.destination input::placeholder { color: var(--muted); }
+.target input:focus { outline: none; }
+.target input::placeholder { color: var(--muted); font-weight: 400; }
+.target:focus-within { border-color: rgba(94, 234, 212, 0.5); }
+
+.arrived {
+  margin: 0 0 12px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: linear-gradient(160deg, rgba(94, 234, 212, 0.22), var(--surface));
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* Anchored to a compass bearing, so it slides across as the phone turns. */
+.marker {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  transition: left 0.12s linear;
+}
+.marker-ring {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 3px solid var(--warn);
+  background: rgba(11, 17, 32, 0.45);
+  color: var(--warn);
+  font-size: 1.7rem;
+  line-height: 1;
+}
+.marker-label {
+  max-width: 42vw;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(11, 17, 32, 0.82);
+  color: var(--warn);
+  font-size: 0.7rem;
+  text-align: center;
+}
+.marker[data-state="aligned"] .marker-ring {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 18px rgba(94, 234, 212, 0.55);
+}
+.marker[data-state="aligned"] .marker-label { color: var(--accent); }
 
 .survey-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .badge {

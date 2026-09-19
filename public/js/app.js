@@ -4,20 +4,26 @@ import { createCamera } from "./camera.js";
 import { createSensorTracker, requestSensorAccess } from "./sensors.js";
 import { survey } from "./api.js";
 import { drawMap } from "./map.js";
+import { createMarker } from "./marker.js";
 import { primeSpeech, speak, stopSpeaking } from "./speech.js";
 import {
-  addSurvey, commitRecommendation, emptyMap,
-  toServerNodes, trackMotion, unexploredCount,
+  addSurvey, commitRecommendation, currentNode, DIRECTION_OFFSETS,
+  emptyMap, toServerNodes, trackMotion, unexploredCount,
 } from "./graph.js";
 import {
-  clearSurvey, elements, renderStats, renderSurvey,
-  setBusy, setStatus, showError,
+  clearArrived, clearSurvey, elements, renderStats, renderSurvey,
+  setBusy, setStatus, showArrived, showError,
 } from "./ui.js";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const camera = createCamera(elements.video);
 const budget = createBudget();
+const marker = createMarker({
+  root: elements.marker,
+  ring: elements.markerRing,
+  label: elements.markerLabel,
+});
 
 let map = emptyMap();
 let lastSurvey = null;
@@ -33,6 +39,9 @@ function render() {
 const sensors = createSensorTracker({
   onUpdate: (snapshot) => {
     map = trackMotion(map, snapshot);
+    // Redrawing the marker on every heading tick is what keeps it pinned to the
+    // world rather than the screen.
+    marker.update(snapshot.heading);
     render();
   },
   onError: showError,
@@ -85,6 +94,13 @@ async function lookAround() {
     return;
   }
 
+  const destination = elements.destination.value.trim();
+  if (!destination) {
+    elements.destination.focus();
+    showError("Say what you are trying to find first, so it knows when you have got there.");
+    return;
+  }
+
   surveying = true;
   setBusy(true);
   stopSpeaking();
@@ -97,7 +113,7 @@ async function lookAround() {
     const result = await survey({
       images,
       nodes: toServerNodes(map),
-      destination: elements.destination.value.trim(),
+      destination,
       heading: Math.round(map.heading),
     });
 
@@ -109,15 +125,32 @@ async function lookAround() {
     lastSurvey = result;
     renderSurvey(result, map);
     speak(result.spoken);
-    render();
 
     if (result.arrived) {
+      marker.clear();
+      clearArrived();
+      showArrived(destination);
       setStatus("You made it", "good");
     } else if (result.recommendation) {
-      setStatus(`Head ${result.recommendation.direction} — then look around again`, "good");
+      // Anchor the marker to the bearing the recommendation meant, taken from
+      // the heading held during the survey rather than wherever the phone
+      // points now — otherwise "left" drifts as soon as you turn.
+      const node = currentNode(map);
+      const surveyHeading = node?.heading ?? Math.round(map.heading);
+      marker.setTarget(
+        surveyHeading + DIRECTION_OFFSETS[result.recommendation.direction],
+        result.recommendation.direction === "back" ? "Back the way you came" : "Go this way",
+      );
+      marker.update(map.heading);
+      clearArrived();
+      setStatus("Follow the marker, then look around again", "good");
     } else {
+      marker.clear();
+      clearArrived();
       setStatus("No way forward from here — go back", "warn");
     }
+
+    render();
   } catch (err) {
     console.error(err);
     showError(err.message);
@@ -132,6 +165,7 @@ function reset() {
   stopSpeaking();
   sensors.stop();
   camera.stop();
+  marker.clear();
   map = emptyMap();
   lastSurvey = null;
   clearSurvey();

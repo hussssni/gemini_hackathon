@@ -32,6 +32,13 @@ export const LOST = Object.freeze({
   MIN_CONFIDENCE: 0.45,
 });
 
+export const MARKER = Object.freeze({
+  // Roughly the horizontal field of view of a phone's rear camera. Only used to
+  // place the marker within the frame, so being a few degrees off is harmless.
+  CAMERA_FOV_DEGREES: 65,
+  ALIGNED_DEGREES: 12,
+});
+
 export const MAP = Object.freeze({
   PADDING_PX: 28,
   MIN_SPAN_METERS: 12,

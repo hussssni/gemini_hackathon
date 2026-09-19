@@ -14,10 +14,15 @@ There is no setup walk. You start where you are, already lost.
 2. **Gemini reads the place.** In one call it describes where you are, recognises the
    spot if you have stood here before, lists every way out it can actually see, and
    rates how promising each one looks for your destination.
-3. **It picks one and says it aloud.** Plain speech, so you can keep walking and
-   looking around instead of reading a screen.
+3. **It picks one and says it aloud**, and drops a marker over the camera feed at
+   the bearing it means. The marker is pinned to the compass, not the screen, so
+   turning the phone sweeps it across the view until it settles on the way to walk.
+   "Take the left path" stops meaning anything the moment you turn around; a marker
+   you can physically hunt for does not.
 4. **You walk that way and look around again.** The new stop joins the map, linked to
-   the one you left. Repeat.
+   the one you left. Repeat until it tells you that what you were looking for is in
+   shot — you say up front what you are trying to find, and every survey is checked
+   against it.
 
 The map grows a node at a time. Dashed stubs show the ways nobody has taken yet, so
 at a glance you can see where there is still left to try — and the highlighted one is
@@ -102,6 +107,7 @@ the two worth calibrating on a real phone before demoing.
 | [public/js/sensors.js](public/js/sensors.js) | Step detection, compass heading, iOS permissions |
 | [public/js/graph.js](public/js/graph.js) | Immutable map of places, leads and links |
 | [public/js/map.js](public/js/map.js) | Canvas renderer, including unexplored leads |
+| [public/js/marker.js](public/js/marker.js) | Compass-anchored direction marker |
 | [public/js/app.js](public/js/app.js) | The look-around loop |
 
 ## Limitations
@@ -110,5 +116,7 @@ the two worth calibrating on a real phone before demoing.
 - Repetitive scenery (identical corridors, uniform forest) makes recognising a place
   you have already been unreliable, which is why every survey carries a confidence
   score and the app shows it.
-- No offline mode. Every landmark and match needs a network round trip, which is
-  the opposite of what a real trail offers.
+- The marker needs an absolute compass heading. Some Android browsers only report
+  a relative one, and it cannot anchor without it.
+- No offline mode. Every survey needs a network round trip, which is the opposite of
+  what a real trail offers.

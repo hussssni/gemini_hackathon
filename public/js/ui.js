@@ -17,6 +17,10 @@ export const elements = {
   surveyHere: byId("survey-here"),
   surveyOptions: byId("survey-options"),
   destination: byId("destination"),
+  arrived: byId("arrived"),
+  marker: byId("marker"),
+  markerRing: byId("marker-ring"),
+  markerLabel: byId("marker-label"),
   replayButton: byId("replay"),
   startButton: byId("start"),
   lookButton: byId("look"),
@@ -94,8 +98,18 @@ export function renderSurvey(result, map) {
   elements.survey.hidden = false;
 }
 
+export function showArrived(destination) {
+  elements.arrived.textContent = `You've reached ${destination || "your destination"}.`;
+  elements.arrived.hidden = false;
+}
+
+export function clearArrived() {
+  elements.arrived.hidden = true;
+}
+
 export function clearSurvey() {
   elements.survey.hidden = true;
+  clearArrived();
 }
 
 export function setBusy(isBusy) {

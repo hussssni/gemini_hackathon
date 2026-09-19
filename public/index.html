@@ -13,9 +13,21 @@
   </header>
 
   <main>
+    <label class="target" for="destination">
+      <span class="target-label">I'm trying to find</span>
+      <input id="destination" type="text" placeholder="a road, the car park, the main trail…"
+             autocomplete="off" enterkeyhint="done" maxlength="200">
+    </label>
+
+    <p id="arrived" class="arrived" hidden></p>
+
     <section class="panes">
       <div class="pane pane-camera">
         <video id="preview" playsinline muted></video>
+        <div id="marker" class="marker" hidden>
+          <span id="marker-ring" class="marker-ring"></span>
+          <span id="marker-label" class="marker-label"></span>
+        </div>
         <span class="pane-label">Camera</span>
       </div>
       <div class="pane pane-map">
@@ -29,12 +41,6 @@
       <div><dt>Leads left</dt><dd id="leads">0</dd></div>
       <div><dt>Steps</dt><dd id="steps">0</dd></div>
     </dl>
-
-    <label class="destination" for="destination">
-      What are you trying to find?
-      <input id="destination" type="text" placeholder="A road, a building, anywhere I can get my bearings"
-             autocomplete="off" enterkeyhint="done" maxlength="200">
-    </label>
 
     <section id="survey" class="survey" hidden>
       <div class="survey-head">
