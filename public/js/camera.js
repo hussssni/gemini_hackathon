@@ -1,0 +1,54 @@
+import { CAPTURE } from "./config.js";
+
+const BASE64_PREFIX = /^data:image\/jpeg;base64,/;
+
+/**
+ * Wraps the rear camera stream and hands back downscaled JPEG keyframes as
+ * bare base64, which is what the Gemini inlineData part expects.
+ */
+export function createCamera(videoElement) {
+  const canvas = document.createElement("canvas");
+  let stream = null;
+
+  const start = async () => {
+    if (stream) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Camera access needs a secure connection (https or localhost).");
+    }
+
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+      audio: false,
+    });
+    videoElement.srcObject = stream;
+    await videoElement.play();
+  };
+
+  const stop = () => {
+    stream?.getTracks().forEach((track) => track.stop());
+    stream = null;
+    videoElement.srcObject = null;
+  };
+
+  const captureFrame = () => {
+    const { videoWidth, videoHeight } = videoElement;
+    if (!videoWidth || !videoHeight) {
+      throw new Error("The camera has not produced a frame yet.");
+    }
+
+    const scale = Math.min(1, CAPTURE.FRAME_WIDTH / videoWidth);
+    canvas.width = Math.round(videoWidth * scale);
+    canvas.height = Math.round(videoHeight * scale);
+
+    const context = canvas.getContext("2d");
+    context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+
+    return canvas
+      .toDataURL("image/jpeg", CAPTURE.JPEG_QUALITY)
+      .replace(BASE64_PREFIX, "");
+  };
+
+  const isRunning = () => stream !== null;
+
+  return { start, stop, captureFrame, isRunning };
+}

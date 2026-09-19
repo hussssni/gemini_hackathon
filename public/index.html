@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Breadcrumb</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="bar">
+    <h1>Breadcrumb</h1>
+    <span id="status" class="status" data-tone="neutral">Ready</span>
+  </header>
+
+  <main>
+    <section class="panes">
+      <div class="pane pane-camera">
+        <video id="preview" playsinline muted></video>
+        <span class="pane-label">Camera</span>
+      </div>
+      <div class="pane pane-map">
+        <canvas id="map"></canvas>
+        <span class="pane-label">Trail</span>
+      </div>
+    </section>
+
+    <dl class="stats">
+      <div><dt>Steps</dt><dd id="steps">0</dd></div>
+      <div><dt>Heading</dt><dd id="heading">0&deg;</dd></div>
+      <div><dt>Landmarks</dt><dd id="landmark-count">0</dd></div>
+    </dl>
+
+    <section id="route" class="route" hidden>
+      <h2>The way back</h2>
+      <p id="route-summary" class="route-summary"></p>
+      <ol id="route-steps" class="route-steps"></ol>
+      <ul id="route-warnings" class="route-warnings"></ul>
+    </section>
+
+    <section class="log">
+      <h2>Breadcrumbs</h2>
+      <ul id="landmarks" class="landmarks"></ul>
+    </section>
+
+    <details class="dev">
+      <summary>Desktop testing</summary>
+      <p>No phone sensors? Fake a walk: set a heading, then tap Step.</p>
+      <label for="sim-heading">Heading</label>
+      <input id="sim-heading" type="range" min="0" max="359" value="0">
+      <button id="sim-step" type="button" class="ghost">Step</button>
+    </details>
+  </main>
+
+  <footer class="actions">
+    <button id="start" type="button" class="primary">Start walk</button>
+    <button id="lost" type="button" class="danger">I'm lost</button>
+    <button id="reset" type="button" class="ghost">Reset</button>
+  </footer>
+
+  <p id="toast" class="toast" role="alert" hidden></p>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
