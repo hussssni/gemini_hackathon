@@ -87,7 +87,14 @@ app.use(express.static("public"));
 app.post("/api/survey", async (req, res) => {
   const parsed = surveyBody.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: "Invalid request", details: parsed.error.issues });
+    // Name the offending field. "Invalid request" alone hides which end is
+    // wrong, and a client and server that disagree look like a model failure.
+    const issue = parsed.error.issues[0];
+    console.error("[survey] rejected", parsed.error.issues);
+    return res.status(400).json({
+      error: `Invalid request: ${issue.path.join(".") || "body"} ${issue.message}`,
+      details: parsed.error.issues,
+    });
   }
 
   const { frames, nodes, destination } = parsed.data;

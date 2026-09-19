@@ -59,5 +59,8 @@ export function createCamera(videoElement) {
  * path over there" into a bearing we can point at later.
  */
 export function frameAt(camera, heading) {
-  return Object.freeze({ image: camera.captureFrame(), heading: Math.round(heading) });
+  // A phone with no usable compass reports nothing rather than zero, and an
+  // unusable heading must not become a bearing the marker points at.
+  const safe = Number.isFinite(heading) ? ((Math.round(heading) % 360) + 360) % 360 : 0;
+  return Object.freeze({ image: camera.captureFrame(), heading: safe });
 }

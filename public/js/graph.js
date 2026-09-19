@@ -152,7 +152,7 @@ export const toServerNodes = (map) =>
     steps: node.steps,
     is_current: node.id === map.currentNodeId,
     options: node.options.map((option) => ({
-      bearing: Math.round(option.bearing),
+      bearing: Number.isFinite(option.bearing) ? Math.round(option.bearing) : 0,
       description: option.description,
       status: option.status === "taken-pending" ? "taken" : option.status,
       leads_to: option.leadsTo ?? null,
