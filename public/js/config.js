@@ -19,6 +19,13 @@ export const CAPTURE = Object.freeze({
   JPEG_QUALITY: 0.72,
 });
 
+// The free Gemini tier allows 20 requests a minute. Landmark capture must stay
+// well under it, because being lost costs two more calls (locate, then route).
+export const QUOTA = Object.freeze({
+  REQUESTS_PER_MINUTE: 20,
+  RESERVED_FOR_RESCUE: 4,
+});
+
 export const LOST = Object.freeze({
   PAN_FRAMES: 4,
   PAN_INTERVAL_MS: 1100,

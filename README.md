@@ -38,6 +38,21 @@ Get a key from [Google AI Studio](https://aistudio.google.com/apikey). `.env` is
 gitignored — keep the key out of commits. The browser never sees it; the key stays
 on the server and all Gemini calls go through `/api/*`.
 
+### Quota, and why it shapes the design
+
+On the free tier, Gemini counts requests **per model per day** — `gemini-3.6-flash`
+allows only 20, which a single test run can exhaust. Two things follow:
+
+- The app defaults to `gemini-3.1-flash-lite`, which is quick enough to describe a
+  landmark mid-stride (~1.5s) and still gets the reversed route right. Override
+  either role in `.env`.
+- The client keeps a rolling request budget ([public/js/budget.js](public/js/budget.js))
+  and stops capturing landmarks before the allowance is gone, so "I'm lost" always
+  has calls left. That is the one request that must never fail.
+
+Enabling billing on the Google Cloud project removes the cap. For a demo it costs
+very little and is worth doing beforehand.
+
 ### Running it on a phone
 
 Camera and motion sensors need a secure context, so `http://<your-laptop-ip>:3000`

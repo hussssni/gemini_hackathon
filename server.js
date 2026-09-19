@@ -1,6 +1,7 @@
 import express from "express";
 import { z } from "zod";
-import { generateJson } from "./lib/gemini.js";
+import { generateJson, MODELS } from "./lib/gemini.js";
+import { isRateLimit } from "./lib/retry.js";
 import {
   landmarkPrompt, landmarkSchema,
   locatePrompt, locateSchema,
@@ -47,6 +48,13 @@ function handler(schemaKey, run) {
       res.json(await run(parsed.data));
     } catch (err) {
       console.error(`[${schemaKey}]`, err);
+      // Quota is the one failure the user can act on, so name it. Everything
+      // else stays generic; details belong in the server log, not the client.
+      if (isRateLimit(err)) {
+        return res.status(429).json({
+          error: "Gemini's per-minute quota is used up. Wait about a minute, then try again.",
+        });
+      }
       res.status(502).json({ error: "Gemini request failed" });
     }
   };
@@ -56,8 +64,15 @@ const app = express();
 app.use(express.json({ limit: "12mb" }));
 app.use(express.static("public"));
 
+// Landmark capture happens mid-walk, so latency matters more than deliberation.
 app.post("/api/landmark", handler("landmark", ({ image, heading, steps }) =>
-  generateJson({ prompt: landmarkPrompt({ heading, steps }), images: [image], schema: landmarkSchema })));
+  generateJson({
+    prompt: landmarkPrompt({ heading, steps }),
+    images: [image],
+    schema: landmarkSchema,
+    thinkingBudget: 0,
+    model: MODELS.PERCEPTION,
+  })));
 
 app.post("/api/locate", handler("locate", ({ images, landmarks }) =>
   generateJson({ prompt: locatePrompt({ landmarks }), images, schema: locateSchema })));

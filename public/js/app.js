@@ -1,4 +1,5 @@
 import { CAPTURE, LOST } from "./config.js";
+import { createBudget } from "./budget.js";
 import { createCamera } from "./camera.js";
 import { createSensorTracker, requestSensorAccess } from "./sensors.js";
 import { describeLandmark, locate, routeBack } from "./api.js";
@@ -16,6 +17,7 @@ import {
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const camera = createCamera(elements.video);
+const budget = createBudget();
 
 let trail = emptyTrail();
 let mode = "idle";
@@ -35,6 +37,7 @@ function render() {
  */
 function shouldCapture() {
   if (describing || mode !== "walking") return false;
+  if (!budget.canCapture()) return false;
   if (trail.landmarks.length === 0) return true;
 
   const stepsSince = trail.steps - lastCapture.steps;
@@ -53,6 +56,7 @@ async function captureLandmark() {
   try {
     const image = camera.captureFrame();
     setStatus("Reading the landmark…", "busy");
+    budget.spend();
     const described = await describeLandmark({ image, heading, steps });
 
     trail = addLandmark(trail, {
@@ -144,6 +148,7 @@ async function findWayBack() {
     const landmarks = toServerLandmarks(trail.landmarks);
 
     setStatus("Matching what you see…", "busy");
+    budget.spend();
     const match = await locate({ images, landmarks });
 
     if (!match.matched_landmark_id || match.confidence < LOST.MIN_CONFIDENCE) {
@@ -158,6 +163,7 @@ async function findWayBack() {
     render();
 
     setStatus("Working out the way back…", "busy");
+    budget.spend();
     const route = await routeBack({
       landmarks,
       currentLandmarkId: match.matched_landmark_id,
