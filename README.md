@@ -15,10 +15,12 @@ There is no setup walk. You start where you are, already lost.
    spot if you have stood here before, lists every way out it can actually see, and
    rates how promising each one looks for your destination.
 3. **It picks one and says it aloud**, and drops a marker over the camera feed at
-   the bearing it means. The marker is pinned to the compass, not the screen, so
-   turning the phone sweeps it across the view until it settles on the way to walk.
-   "Take the left path" stops meaning anything the moment you turn around; a marker
-   you can physically hunt for does not.
+   the bearing it means. Each frame of the pan is tagged with the compass heading it
+   was shot at, and Gemini says which frame an exit appears in — so the bearing is a
+   real sensor reading, not a guess. The marker is pinned to that bearing rather than
+   to the screen, so turning the phone sweeps it across the view until it settles on
+   the way to walk. "Take the left path" stops meaning anything the moment you turn
+   around; a marker you can physically hunt for does not.
 4. **You walk that way and look around again.** The new stop joins the map, linked to
    the one you left. Repeat until it tells you that what you were looking for is in
    shot — you say up front what you are trying to find, and every survey is checked
@@ -27,6 +29,14 @@ There is no setup walk. You start where you are, already lost.
 The map grows a node at a time. Dashed stubs show the ways nobody has taken yet, so
 at a glance you can see where there is still left to try — and the highlighted one is
 what Gemini suggests next.
+
+### It remembers
+
+The map is saved on the device, so somewhere you explored before is somewhere it
+already knows. Walk back in, look around, and Gemini recognises the place from the
+saved description — you are located on the old map without retracing anything, and
+a destination already recorded becomes a route over known ground rather than a
+guess. **Reset** is what forgets it.
 
 ### Why this needs Gemini
 
@@ -108,6 +118,7 @@ the two worth calibrating on a real phone before demoing.
 | [public/js/graph.js](public/js/graph.js) | Immutable map of places, leads and links |
 | [public/js/map.js](public/js/map.js) | Canvas renderer, including unexplored leads |
 | [public/js/marker.js](public/js/marker.js) | Compass-anchored direction marker |
+| [public/js/storage.js](public/js/storage.js) | Saving the map between visits |
 | [public/js/app.js](public/js/app.js) | The look-around loop |
 
 ## Limitations
@@ -118,5 +129,8 @@ the two worth calibrating on a real phone before demoing.
   score and the app shows it.
 - The marker needs an absolute compass heading. Some Android browsers only report
   a relative one, and it cannot anchor without it.
+- Step detection varies a lot by phone and by how you carry it. When no steps
+  register, stops are spaced a nominal distance apart, so the map keeps its shape
+  but its scale means little.
 - No offline mode. Every survey needs a network round trip, which is the opposite of
   what a real trail offers.

@@ -52,3 +52,12 @@ export function createCamera(videoElement) {
 
   return { start, stop, captureFrame, isRunning };
 }
+
+/**
+ * Pairs each frame with the compass heading it was shot at. The pan is the only
+ * moment the phone sweeps the whole scene, so these headings are what turn "a
+ * path over there" into a bearing we can point at later.
+ */
+export function frameAt(camera, heading) {
+  return Object.freeze({ image: camera.captureFrame(), heading: Math.round(heading) });
+}

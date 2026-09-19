@@ -3,6 +3,9 @@
 
 export const SENSORS = Object.freeze({
   STRIDE_METERS: 0.72,
+  // Used to space nodes when step detection reports nothing, so a map still
+  // has shape on phones whose accelerometer readings never cross the threshold.
+  NOMINAL_LEG_METERS: 18,
   // Peak magnitude (m/s^2) that counts as a footfall. Gravity alone is ~9.81.
   STEP_PEAK_THRESHOLD: 11.6,
   STEP_MIN_INTERVAL_MS: 260,

@@ -9,10 +9,13 @@ const MAX_IMAGE_CHARS = 2_000_000;
 const MAX_IMAGES = 6;
 const MAX_NODES = 60;
 
-const image = z.string().min(1).max(MAX_IMAGE_CHARS);
+const frameRecord = z.object({
+  image: z.string().min(1).max(MAX_IMAGE_CHARS),
+  heading: z.number().min(0).max(360),
+});
 
 const optionRecord = z.object({
-  direction: z.enum(["ahead", "left", "right", "back"]),
+  bearing: z.number().min(0).max(360),
   description: z.string(),
   status: z.enum(["unexplored", "taken"]),
   leads_to: z.string().nullable().default(null),
@@ -28,11 +31,54 @@ const nodeRecord = z.object({
 });
 
 const surveyBody = z.object({
-  images: z.array(image).min(1).max(MAX_IMAGES),
+  frames: z.array(frameRecord).min(1).max(MAX_IMAGES),
   nodes: z.array(nodeRecord).max(MAX_NODES).default([]),
-  destination: z.string().trim().max(200).default(""),
-  heading: z.number().min(0).max(360),
+  destination: z.string().trim().min(1).max(200),
 });
+
+/**
+ * Turns each option's photo number into the compass bearing that photo was shot
+ * at, and drops any option pointing at a photo that does not exist. A bearing
+ * invented from a bad index would aim the marker at nothing.
+ */
+function resolveBearings(survey, frames) {
+  // Keep the original position of each option: the model's recommendation
+  // indexes into the list it wrote, not into whatever survives the filter.
+  const kept = (survey.options ?? [])
+    .map((option, index) => ({ option, originalIndex: index + 1 }))
+    .filter(({ option }) => Number.isInteger(option.photo)
+      && option.photo >= 1
+      && option.photo <= frames.length);
+
+  const options = kept.map(({ option }) => ({
+    bearing: frames[option.photo - 1].heading,
+    description: option.description,
+    promise: option.promise ?? 0,
+  }));
+
+  if (survey.arrived || options.length === 0) {
+    return { ...survey, options, recommendation: null };
+  }
+
+  const asked = survey.recommendation?.option_index;
+  const position = kept.findIndex((entry) => entry.originalIndex === asked);
+  // A dropped or missing pick still leaves somewhere to walk, so fall back to
+  // the most promising option rather than leaving the marker with no bearing.
+  const chosen = position >= 0
+    ? position
+    : options.reduce((best, option, index) =>
+      option.promise > options[best].promise ? index : best, 0);
+
+  return {
+    ...survey,
+    options,
+    recommendation: {
+      why: survey.recommendation?.why ?? options[chosen].description,
+      option_index: chosen + 1,
+      bearing: options[chosen].bearing,
+    },
+  };
+}
 
 const app = express();
 app.use(express.json({ limit: "12mb" }));
@@ -44,16 +90,22 @@ app.post("/api/survey", async (req, res) => {
     return res.status(400).json({ error: "Invalid request", details: parsed.error.issues });
   }
 
-  const { images, nodes, destination, heading } = parsed.data;
+  const { frames, nodes, destination } = parsed.data;
 
   try {
     const survey = await generateJson({
-      prompt: surveyPrompt({ nodes, destination, heading }),
-      images,
+      prompt: surveyPrompt({
+        nodes,
+        destination,
+        headings: frames.map((frame) => frame.heading),
+      }),
+      images: frames.map((frame) => frame.image),
       schema: surveySchema,
       model: MODELS.REASONING,
     });
-    res.json(survey);
+    // The model picks options by photo number; resolve those to the bearings
+    // the phone actually recorded, so the client never repeats the lookup.
+    res.json(resolveBearings(survey, frames));
   } catch (err) {
     console.error("[survey]", err);
     // Quota is the one failure the user can act on, so name it. Everything

@@ -51,12 +51,11 @@ export function renderStats(map, leads) {
   elements.steps.textContent = String(map.steps);
 }
 
-const DIRECTION_LABELS = Object.freeze({
-  ahead: "Ahead",
-  left: "Left",
-  right: "Right",
-  back: "Back",
-});
+const COMPASS_POINTS = Object.freeze(["N", "NE", "E", "SE", "S", "SW", "W", "NW"]);
+
+/** Bearings are exact but unreadable; a compass point is what a person wants. */
+const compassPoint = (bearing) =>
+  COMPASS_POINTS[Math.round((((bearing % 360) + 360) % 360) / 45) % 8];
 
 function optionRow(option, isRecommended) {
   const item = document.createElement("li");
@@ -65,7 +64,7 @@ function optionRow(option, isRecommended) {
 
   const direction = document.createElement("span");
   direction.className = "option-direction";
-  direction.textContent = DIRECTION_LABELS[option.direction] ?? option.direction;
+  direction.textContent = compassPoint(option.bearing);
 
   const text = document.createElement("p");
   text.textContent = option.description;
@@ -79,7 +78,7 @@ function optionRow(option, isRecommended) {
 }
 
 export function renderSurvey(result, map) {
-  const recommended = result.recommendation?.direction ?? null;
+  const recommendedIndex = result.recommendation?.option_index ?? null;
 
   elements.surveyBadge.textContent = result.arrived
     ? "Arrived"
@@ -92,7 +91,8 @@ export function renderSurvey(result, map) {
   elements.surveyHere.textContent = result.here.description;
 
   elements.surveyOptions.replaceChildren(
-    ...(result.options ?? []).map((option) => optionRow(option, option.direction === recommended)),
+    ...(result.options ?? []).map((option, index) =>
+      optionRow(option, index + 1 === recommendedIndex)),
   );
 
   elements.survey.hidden = false;

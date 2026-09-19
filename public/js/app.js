@@ -1,15 +1,16 @@
 import { LOST } from "./config.js";
 import { createBudget } from "./budget.js";
-import { createCamera } from "./camera.js";
+import { createCamera, frameAt } from "./camera.js";
 import { createSensorTracker, requestSensorAccess } from "./sensors.js";
 import { survey } from "./api.js";
 import { drawMap } from "./map.js";
 import { createMarker } from "./marker.js";
 import { primeSpeech, speak, stopSpeaking } from "./speech.js";
 import {
-  addSurvey, commitRecommendation, currentNode, DIRECTION_OFFSETS,
-  emptyMap, toServerNodes, trackMotion, unexploredCount,
+  addSurvey, commitRecommendation, emptyMap, fromSaved,
+  toServerNodes, trackMotion, unexploredCount,
 } from "./graph.js";
+import { clearMap, describeAge, loadMap, saveMap } from "./storage.js";
 import {
   clearArrived, clearSurvey, elements, renderStats, renderSurvey,
   setBusy, setStatus, showArrived, showError,
@@ -32,7 +33,7 @@ let surveying = false;
 function render() {
   renderStats(map, unexploredCount(map));
   drawMap(elements.canvas, map, {
-    recommendedDirection: lastSurvey?.recommendation?.direction ?? null,
+    recommendedBearing: lastSurvey?.recommendation?.bearing ?? null,
   });
 }
 
@@ -47,15 +48,19 @@ const sensors = createSensorTracker({
   onError: showError,
 });
 
-/** Grabs a spread of frames while the explorer pans, left to right. */
+/**
+ * Grabs a spread of frames while the explorer pans, tagging each with the
+ * heading it was shot at. Those headings are what let an exit seen in a photo
+ * become a bearing the marker can point at afterwards.
+ */
 async function capturePanorama() {
-  const images = [];
+  const frames = [];
   for (let index = 0; index < LOST.PAN_FRAMES; index += 1) {
     setStatus(`Keep panning — frame ${index + 1} of ${LOST.PAN_FRAMES}`, "busy");
-    images.push(camera.captureFrame());
+    frames.push(frameAt(camera, map.heading));
     if (index < LOST.PAN_FRAMES - 1) await delay(LOST.PAN_INTERVAL_MS);
   }
-  return images;
+  return frames;
 }
 
 async function begin() {
@@ -106,21 +111,17 @@ async function lookAround() {
   stopSpeaking();
 
   try {
-    const images = await capturePanorama();
+    const frames = await capturePanorama();
 
     setStatus("Reading the surroundings…", "busy");
     budget.spend();
-    const result = await survey({
-      images,
-      nodes: toServerNodes(map),
-      destination,
-      heading: Math.round(map.heading),
-    });
+    const result = await survey({ frames, nodes: toServerNodes(map), destination });
 
     map = addSurvey(map, result, { heading: Math.round(map.heading), steps: map.steps });
     if (result.recommendation) {
-      map = commitRecommendation(map, result.recommendation.direction);
+      map = commitRecommendation(map, result.recommendation.option_index);
     }
+    saveMap(map);
 
     lastSurvey = result;
     renderSurvey(result, map);
@@ -132,15 +133,9 @@ async function lookAround() {
       showArrived(destination);
       setStatus("You made it", "good");
     } else if (result.recommendation) {
-      // Anchor the marker to the bearing the recommendation meant, taken from
-      // the heading held during the survey rather than wherever the phone
-      // points now — otherwise "left" drifts as soon as you turn.
-      const node = currentNode(map);
-      const surveyHeading = node?.heading ?? Math.round(map.heading);
-      marker.setTarget(
-        surveyHeading + DIRECTION_OFFSETS[result.recommendation.direction],
-        result.recommendation.direction === "back" ? "Back the way you came" : "Go this way",
-      );
+      // The bearing came from the compass reading of the photo the exit appears
+      // in, so the marker points where the camera actually saw it.
+      marker.setTarget(result.recommendation.bearing, "Go this way");
       marker.update(map.heading);
       clearArrived();
       setStatus("Follow the marker, then look around again", "good");
@@ -166,6 +161,7 @@ function reset() {
   sensors.stop();
   camera.stop();
   marker.clear();
+  clearMap();
   map = emptyMap();
   lastSurvey = null;
   clearSurvey();
@@ -195,5 +191,16 @@ elements.headingInput.addEventListener("input", () => {
 });
 addEventListener("resize", render);
 
-setStatus("Ready", "neutral");
+/** Somewhere explored before is somewhere Gemini can recognise, so the map
+ *  outlives the session and a return visit picks up where it left off. */
+function restoreSavedMap() {
+  const saved = loadMap();
+  if (!saved) return;
+
+  map = fromSaved(saved);
+  render();
+  setStatus(`Remembered ${map.nodes.length} places from ${describeAge(saved.savedAt)}`, "good");
+}
+
+restoreSavedMap();
 render();

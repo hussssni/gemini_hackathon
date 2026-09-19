@@ -4,15 +4,19 @@ import { SENSORS } from "./config.js";
 // node; every option seen there is a lead, marked taken once it is walked.
 // Everything here returns new objects rather than mutating.
 
-export const DIRECTION_OFFSETS = Object.freeze({
-  ahead: 0,
-  right: 90,
-  back: 180,
-  left: -90,
-});
-
 export const emptyMap = () =>
   Object.freeze({ nodes: Object.freeze([]), currentNodeId: null, heading: 0, steps: 0 });
+
+/** Rebuilds a map saved on a previous visit. Position and links come back with
+ *  it; the live step count does not, since the walk that produced it is over. */
+export const fromSaved = (saved) =>
+  Object.freeze({
+    nodes: Object.freeze(saved.nodes.map((node) =>
+      Object.freeze({ ...node, options: Object.freeze(node.options.map(Object.freeze)) }))),
+    currentNodeId: saved.currentNodeId,
+    heading: 0,
+    steps: 0,
+  });
 
 const nodeId = (index) => `n${index + 1}`;
 
@@ -20,9 +24,8 @@ export const findNode = (map, id) => map.nodes.find((node) => node.id === id) ??
 
 export const currentNode = (map) => findNode(map, map.currentNodeId);
 
-/** Where a node's unexplored option points, as an absolute compass heading. */
-export const optionHeading = (node, option) =>
-  (node.heading + DIRECTION_OFFSETS[option.direction] + 360) % 360;
+/** Options already carry an absolute bearing, measured when the pan was shot. */
+export const optionHeading = (_node, option) => option.bearing;
 
 const toPoint = (from, heading, distanceMeters) => {
   const radians = (heading * Math.PI) / 180;
@@ -41,31 +44,36 @@ const placeNode = (map, stepsWalked) => {
   if (!previous) return { x: 0, y: 0 };
 
   const taken = previous.options.find((option) => option.status === "taken-pending");
-  const heading = taken ? optionHeading(previous, taken) : previous.heading;
-  return toPoint(previous, heading, stepsWalked * SENSORS.STRIDE_METERS);
+  const heading = taken ? taken.bearing : previous.heading;
+
+  // Step detection fails on plenty of phones, and without a fallback every node
+  // would land on the last one and the map would look like a single dot.
+  const distance = stepsWalked > 0
+    ? stepsWalked * SENSORS.STRIDE_METERS
+    : SENSORS.NOMINAL_LEG_METERS;
+
+  return toPoint(previous, heading, distance);
 };
 
 const buildOptions = (options = []) =>
   Object.freeze(options.map((option, index) =>
     Object.freeze({
       id: `o${index + 1}`,
-      direction: option.direction,
+      bearing: ((option.bearing % 360) + 360) % 360,
       description: option.description,
       promise: option.promise ?? 0,
       status: "unexplored",
     })));
 
 /** Marks the option the explorer was told to take, so the next node links to it. */
-export const commitRecommendation = (map, direction) => {
+export const commitRecommendation = (map, optionIndex) => {
   const node = currentNode(map);
-  if (!node || !direction) return map;
+  if (!node || !Number.isInteger(optionIndex)) return map;
 
-  let marked = false;
-  const options = node.options.map((option) => {
-    if (marked || option.direction !== direction || option.status !== "unexplored") return option;
-    marked = true;
-    return Object.freeze({ ...option, status: "taken-pending" });
-  });
+  const options = node.options.map((option, index) =>
+    index === optionIndex - 1 && option.status === "unexplored"
+      ? Object.freeze({ ...option, status: "taken-pending" })
+      : option);
 
   return Object.freeze({
     ...map,
@@ -144,7 +152,7 @@ export const toServerNodes = (map) =>
     steps: node.steps,
     is_current: node.id === map.currentNodeId,
     options: node.options.map((option) => ({
-      direction: option.direction,
+      bearing: Math.round(option.bearing),
       description: option.description,
       status: option.status === "taken-pending" ? "taken" : option.status,
       leads_to: option.leadsTo ?? null,

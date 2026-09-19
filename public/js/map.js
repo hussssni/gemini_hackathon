@@ -84,7 +84,7 @@ function drawEdges(context, map, project) {
  * Unexplored options are drawn as dashed stubs pointing the way they lead.
  * They are the whole point of the map: where there is still left to try.
  */
-function drawLeads(context, map, project, recommendedDirection) {
+function drawLeads(context, map, project, recommendedBearing) {
   context.setLineDash([4, 4]);
   context.lineWidth = 2;
 
@@ -93,7 +93,8 @@ function drawLeads(context, map, project, recommendedDirection) {
     node.options
       .filter((option) => option.status === "unexplored")
       .forEach((option) => {
-        const isBest = node.id === map.currentNodeId && option.direction === recommendedDirection;
+        const isBest = node.id === map.currentNodeId
+          && Math.round(option.bearing) === Math.round(recommendedBearing ?? -1);
         const radians = (optionHeading(node, option) * Math.PI) / 180;
 
         context.strokeStyle = isBest ? PALETTE.leadBest : PALETTE.lead;
@@ -118,7 +119,7 @@ function drawEmptyState(context, width, height) {
   context.textAlign = "start";
 }
 
-export function drawMap(canvas, map, { recommendedDirection = null } = {}) {
+export function drawMap(canvas, map, { recommendedBearing = null } = {}) {
   const ratio = globalThis.devicePixelRatio || 1;
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
@@ -139,7 +140,7 @@ export function drawMap(canvas, map, { recommendedDirection = null } = {}) {
 
   const project = createProjection(map.nodes, width, height);
   drawEdges(context, map, project);
-  drawLeads(context, map, project, recommendedDirection);
+  drawLeads(context, map, project, recommendedBearing);
 
   map.nodes.forEach((node, index) => {
     const isCurrent = node.id === map.currentNodeId;
