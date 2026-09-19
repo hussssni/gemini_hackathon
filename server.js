@@ -1,8 +1,9 @@
-import { createApp } from "./lib/app.js";
+import express from "express";
+import { configureApp } from "./lib/app.js";
 
 const PORT = Number(process.env.PORT) || 3000;
 
-const app = createApp();
+const app = configureApp(express());
 
 // Vercel runs the exported app itself; everywhere else, listen on a port.
 if (!process.env.VERCEL) {
