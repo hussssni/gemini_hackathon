@@ -8,24 +8,22 @@ export const elements = {
   video: byId("preview"),
   canvas: byId("map"),
   status: byId("status"),
+  places: byId("places"),
+  leads: byId("leads"),
   steps: byId("steps"),
-  heading: byId("heading"),
-  landmarkCount: byId("landmark-count"),
-  landmarks: byId("landmarks"),
-  route: byId("route"),
-  routeStrategy: byId("route-strategy"),
-  routeSummary: byId("route-summary"),
-  routeSteps: byId("route-steps"),
-  routeFrontier: byId("route-frontier"),
-  routeWarnings: byId("route-warnings"),
+  survey: byId("survey"),
+  surveyBadge: byId("survey-badge"),
+  surveySpoken: byId("survey-spoken"),
+  surveyHere: byId("survey-here"),
+  surveyOptions: byId("survey-options"),
   destination: byId("destination"),
   replayButton: byId("replay"),
-  toast: byId("toast"),
   startButton: byId("start"),
-  lostButton: byId("lost"),
+  lookButton: byId("look"),
   resetButton: byId("reset"),
   stepButton: byId("sim-step"),
   headingInput: byId("sim-heading"),
+  toast: byId("toast"),
 };
 
 export function setStatus(text, tone = "neutral") {
@@ -43,80 +41,65 @@ export function showError(message) {
   }, 6000);
 }
 
-export function renderStats(trail) {
-  elements.steps.textContent = String(trail.steps);
-  elements.heading.textContent = `${Math.round(trail.heading)}°`;
-  elements.landmarkCount.textContent = String(trail.landmarks.length);
+export function renderStats(map, leads) {
+  elements.places.textContent = String(map.nodes.length);
+  elements.leads.textContent = String(leads);
+  elements.steps.textContent = String(map.steps);
 }
 
-export function renderLandmarks(trail, matchedId = null) {
-  elements.landmarks.replaceChildren(
-    ...[...trail.landmarks].reverse().map((landmark) => {
-      const item = document.createElement("li");
-      item.className = "landmark";
-      if (landmark.id === matchedId) item.classList.add("is-match");
-      if (landmark.is_decision_point) item.classList.add("is-decision");
-
-      const meta = document.createElement("span");
-      meta.className = "landmark-meta";
-      meta.textContent = `${landmark.steps} steps · ${Math.round(landmark.heading)}°`;
-
-      const text = document.createElement("p");
-      text.textContent = landmark.description;
-
-      item.append(meta, text);
-      return item;
-    }),
-  );
-}
-
-function listItems(target, values) {
-  target.replaceChildren(
-    ...values.map((value) => {
-      const item = document.createElement("li");
-      item.textContent = value;
-      return item;
-    }),
-  );
-}
-
-const STRATEGY_LABELS = Object.freeze({
-  retrace: "Known route",
-  explore: "Best guess",
-  arrived: "You're here",
+const DIRECTION_LABELS = Object.freeze({
+  ahead: "Ahead",
+  left: "Left",
+  right: "Right",
+  back: "Back",
 });
 
-export function renderPlan(plan) {
-  // A plan with nothing to walk means they are already there, whatever the
-  // model labelled it. Trusting the step list keeps the badge honest.
-  const strategy = (plan.steps ?? []).length === 0 ? "arrived" : plan.strategy;
+function optionRow(option, isRecommended) {
+  const item = document.createElement("li");
+  item.className = "option";
+  if (isRecommended) item.classList.add("is-pick");
 
-  elements.routeStrategy.textContent = strategy === "arrived"
-    ? STRATEGY_LABELS.arrived
-    : `${STRATEGY_LABELS[strategy] ?? strategy} · ${Math.round(plan.confidence * 100)}%`;
-  elements.routeStrategy.dataset.strategy = strategy;
+  const direction = document.createElement("span");
+  direction.className = "option-direction";
+  direction.textContent = DIRECTION_LABELS[option.direction] ?? option.direction;
 
-  elements.routeSummary.textContent = plan.summary;
-  listItems(elements.routeSteps, plan.steps ?? []);
-  listItems(elements.routeWarnings, plan.warnings ?? []);
+  const text = document.createElement("p");
+  text.textContent = option.description;
 
-  // An explore plan is a gamble on an untaken branch; say why it was picked.
-  if (plan.frontier) {
-    elements.routeFrontier.textContent = `Trying: ${plan.frontier.option} — ${plan.frontier.why}`;
-    elements.routeFrontier.hidden = false;
-  } else {
-    elements.routeFrontier.hidden = true;
-  }
+  const promise = document.createElement("span");
+  promise.className = "option-promise";
+  promise.textContent = `${Math.round((option.promise ?? 0) * 100)}%`;
 
-  elements.route.hidden = false;
+  item.append(direction, promise, text);
+  return item;
 }
 
-export function clearPlan() {
-  elements.route.hidden = true;
+export function renderSurvey(result, map) {
+  const recommended = result.recommendation?.direction ?? null;
+
+  elements.surveyBadge.textContent = result.arrived
+    ? "Arrived"
+    : `${map.nodes.length} mapped · ${Math.round(result.confidence * 100)}% sure`;
+  elements.surveyBadge.dataset.tone = result.arrived
+    ? "good"
+    : result.confidence < 0.4 ? "warn" : "neutral";
+
+  elements.surveySpoken.textContent = result.spoken;
+  elements.surveyHere.textContent = result.here.description;
+
+  elements.surveyOptions.replaceChildren(
+    ...(result.options ?? []).map((option) => optionRow(option, option.direction === recommended)),
+  );
+
+  elements.survey.hidden = false;
+}
+
+export function clearSurvey() {
+  elements.survey.hidden = true;
 }
 
 export function setBusy(isBusy) {
-  [elements.startButton, elements.lostButton, elements.resetButton].forEach((button) => {
+  [elements.startButton, elements.lookButton, elements.resetButton].forEach((button) => {
     button.disabled = isBusy;
   });
 }

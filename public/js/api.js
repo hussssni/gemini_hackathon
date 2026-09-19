@@ -13,8 +13,7 @@ async function post(path, body) {
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
-    const detail = payload?.error ?? `Request failed with status ${response.status}`;
-    throw new Error(detail);
+    throw new Error(payload?.error ?? `Request failed with status ${response.status}`);
   }
   if (!payload) {
     throw new Error("The server returned a response that could not be read.");
@@ -23,11 +22,5 @@ async function post(path, body) {
   return payload;
 }
 
-export const describeLandmark = ({ image, heading, steps }) =>
-  post("/api/landmark", { image, heading, steps });
-
-export const locate = ({ images, landmarks }) =>
-  post("/api/locate", { images, landmarks });
-
-export const navigate = ({ landmarks, currentLandmarkId, facingHeading, destination }) =>
-  post("/api/navigate", { landmarks, currentLandmarkId, facingHeading, destination });
+export const survey = ({ images, nodes, destination, heading }) =>
+  post("/api/survey", { images, nodes, destination, heading });

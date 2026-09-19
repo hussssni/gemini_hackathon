@@ -2,84 +2,69 @@ import express from "express";
 import { z } from "zod";
 import { generateJson, MODELS } from "./lib/gemini.js";
 import { isRateLimit } from "./lib/retry.js";
-import {
-  landmarkPrompt, landmarkSchema,
-  locatePrompt, locateSchema,
-  navigatePrompt, navigateSchema,
-} from "./lib/prompts.js";
+import { surveyPrompt, surveySchema } from "./lib/prompts.js";
 
 const PORT = Number(process.env.PORT) || 3000;
 const MAX_IMAGE_CHARS = 2_000_000;
-const MAX_LOCATE_IMAGES = 6;
+const MAX_IMAGES = 6;
+const MAX_NODES = 60;
 
 const image = z.string().min(1).max(MAX_IMAGE_CHARS);
-const heading = z.number().min(0).max(360);
 
-const landmarkRecord = z.object({
-  id: z.string(),
+const optionRecord = z.object({
+  direction: z.enum(["ahead", "left", "right", "back"]),
   description: z.string(),
-  distinctive_features: z.array(z.string()).default([]),
-  is_decision_point: z.boolean().default(false),
-  options_seen: z.array(z.string()).default([]),
-  heading: heading,
-  steps: z.number().int().nonnegative(),
+  status: z.enum(["unexplored", "taken"]),
+  leads_to: z.string().nullable().default(null),
 });
 
-const bodies = {
-  landmark: z.object({ image, heading, steps: z.number().int().nonnegative() }),
-  locate: z.object({
-    images: z.array(image).min(1).max(MAX_LOCATE_IMAGES),
-    landmarks: z.array(landmarkRecord).min(1),
-  }),
-  navigate: z.object({
-    landmarks: z.array(landmarkRecord).min(1),
-    currentLandmarkId: z.string(),
-    facingHeading: heading,
-    // Empty means "back to the start", the default the UI offers.
-    destination: z.string().trim().max(200).default(""),
-  }),
-};
+const nodeRecord = z.object({
+  id: z.string(),
+  description: z.string(),
+  features: z.array(z.string()).default([]),
+  steps: z.number().int().nonnegative(),
+  is_current: z.boolean().default(false),
+  options: z.array(optionRecord).default([]),
+});
 
-function handler(schemaKey, run) {
-  return async (req, res) => {
-    const parsed = bodies[schemaKey].safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: "Invalid request", details: parsed.error.issues });
-    }
-    try {
-      res.json(await run(parsed.data));
-    } catch (err) {
-      console.error(`[${schemaKey}]`, err);
-      // Quota is the one failure the user can act on, so name it. Everything
-      // else stays generic; details belong in the server log, not the client.
-      if (isRateLimit(err)) {
-        return res.status(429).json({
-          error: "Gemini's per-minute quota is used up. Wait about a minute, then try again.",
-        });
-      }
-      res.status(502).json({ error: "Gemini request failed" });
-    }
-  };
-}
+const surveyBody = z.object({
+  images: z.array(image).min(1).max(MAX_IMAGES),
+  nodes: z.array(nodeRecord).max(MAX_NODES).default([]),
+  destination: z.string().trim().max(200).default(""),
+  heading: z.number().min(0).max(360),
+});
 
 const app = express();
 app.use(express.json({ limit: "12mb" }));
 app.use(express.static("public"));
 
-// Landmark capture happens mid-walk, so latency matters more than deliberation.
-app.post("/api/landmark", handler("landmark", ({ image, heading, steps }) =>
-  generateJson({
-    prompt: landmarkPrompt({ heading, steps }),
-    images: [image],
-    schema: landmarkSchema,
-    thinkingBudget: 0,
-    model: MODELS.PERCEPTION,
-  })));
+app.post("/api/survey", async (req, res) => {
+  const parsed = surveyBody.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.issues });
+  }
 
-app.post("/api/locate", handler("locate", ({ images, landmarks }) =>
-  generateJson({ prompt: locatePrompt({ landmarks }), images, schema: locateSchema })));
+  const { images, nodes, destination, heading } = parsed.data;
 
-app.post("/api/navigate", handler("navigate", (data) =>
-  generateJson({ prompt: navigatePrompt(data), schema: navigateSchema })));
+  try {
+    const survey = await generateJson({
+      prompt: surveyPrompt({ nodes, destination, heading }),
+      images,
+      schema: surveySchema,
+      model: MODELS.REASONING,
+    });
+    res.json(survey);
+  } catch (err) {
+    console.error("[survey]", err);
+    // Quota is the one failure the user can act on, so name it. Everything
+    // else stays generic; details belong in the server log, not the client.
+    if (isRateLimit(err)) {
+      return res.status(429).json({
+        error: "Gemini's quota is used up. Wait a minute, then look around again.",
+      });
+    }
+    res.status(502).json({ error: "Gemini could not read the surroundings." });
+  }
+});
 
 app.listen(PORT, () => console.log(`Breadcrumb running on http://localhost:${PORT}`));

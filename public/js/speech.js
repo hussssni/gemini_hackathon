@@ -30,13 +30,6 @@ export function speak(text) {
   synth.speak(utterance);
 }
 
-/** Speaks a plan as one queued run so steps do not overlap. */
-export function speakPlan({ summary, steps = [] }) {
-  if (!synth) return;
-  synth.cancel();
-  [summary, ...steps].filter(Boolean).forEach(speak);
-}
-
 export function stopSpeaking() {
   synth?.cancel();
 }
