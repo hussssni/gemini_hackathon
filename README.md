@@ -10,7 +10,8 @@ Built for EmberHacks 2026.
 There is no setup walk. You start where you are, already lost.
 
 1. **Look around.** You pan the camera through everything visible from where you
-   stand. Those frames go to Gemini with the map so far and what you are looking for.
+   stand. Eight frames over about five seconds, each tagged with the compass heading
+   it was shot at, go to Gemini along with the map so far and what you are after.
 2. **Gemini reads the place.** In one call it describes where you are, recognises the
    spot if you have stood here before, lists every way out it can actually see, and
    rates how promising each one looks for your destination.
@@ -49,6 +50,12 @@ difference flips on the smallest movement. Rather than let the marker jump betwe
 edges, that whole band is one instruction: turn around.
 
 ### It remembers
+
+Each place also keeps a small reference photo, and the ones you are most likely to
+walk back into are sent along with the next pan so Gemini can compare them side by
+side. Recognising somewhere is a visual judgement, not a matter of how well two
+written descriptions happen to agree — a place recorded only as "a clearing" is
+still recognisable from its photograph.
 
 Every way out is remembered along with what became of it: never walked, led
 somewhere new, dead-ended, or looped back to somewhere already mapped. Come back to
@@ -142,6 +149,7 @@ the two worth calibrating on a real phone before demoing.
 | [public/js/map.js](public/js/map.js) | Canvas renderer, including unexplored leads |
 | [public/js/marker.js](public/js/marker.js) | Compass-anchored direction marker |
 | [public/js/guidance.js](public/js/guidance.js) | Bearings into spoken turns |
+| [lib/gemini.js](lib/gemini.js) | Gemini client, interleaved text and images |
 | [public/js/storage.js](public/js/storage.js) | Saving the map between visits |
 | [public/js/app.js](public/js/app.js) | The look-around loop |
 

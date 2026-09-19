@@ -1,6 +1,6 @@
 import { LOST } from "./config.js";
 import { createBudget } from "./budget.js";
-import { createCamera, frameAt } from "./camera.js";
+import { createCamera, frameAt, referenceShot } from "./camera.js";
 import { createSensorTracker, requestSensorAccess } from "./sensors.js";
 import { survey } from "./api.js";
 import { drawMap } from "./map.js";
@@ -9,7 +9,7 @@ import { primeSpeech, speak, stopSpeaking } from "./speech.js";
 import { bearingDelta, directionSentence, turnPhrase } from "./guidance.js";
 import {
   addSurvey, commitRecommendation, emptyMap, fromSaved,
-  toServerNodes, trackMotion, unexploredCount,
+  selectReferences, toServerNodes, trackMotion, unexploredCount,
 } from "./graph.js";
 import { clearMap, describeAge, loadMap, saveMap } from "./storage.js";
 import {
@@ -136,9 +136,20 @@ async function lookAround() {
 
     setStatus("Reading the surroundings…", "busy");
     budget.spend();
-    const result = await survey({ frames, nodes: toServerNodes(map), destination });
+    const result = await survey({
+      frames,
+      nodes: toServerNodes(map),
+      destination,
+      memory: selectReferences(map),
+    });
 
-    map = addSurvey(map, result, { heading: Math.round(map.heading), steps: map.steps });
+    map = addSurvey(map, result, {
+      heading: Math.round(map.heading),
+      steps: map.steps,
+      // Keep a small shot of this place so a later visit can be recognised by
+      // sight rather than by how well two written descriptions happen to agree.
+      reference: referenceShot(camera),
+    });
     if (result.recommendation) {
       map = commitRecommendation(map, result.recommendation.option_index);
     }

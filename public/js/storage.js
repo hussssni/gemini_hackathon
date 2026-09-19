@@ -6,16 +6,36 @@ const KEY = "breadcrumb.map.v1";
  * covered instead of guessing again. Every access is guarded: private windows
  * and blocked site data make localStorage throw rather than return empty.
  */
+// Reference photos are what make a place recognisable, but they are also the
+// only large thing here, and localStorage is a few megabytes at best. Keep them
+// for the most recent places and let older ones fall back to their description.
+const KEEP_REFERENCES_FOR = 12;
+
+const trimReferences = (nodes) => {
+  const cutoff = nodes.length - KEEP_REFERENCES_FOR;
+  return nodes.map((node, index) =>
+    index >= cutoff ? node : { ...node, reference: null });
+};
+
 export function saveMap(map) {
   if (map.nodes.length === 0) return;
+
+  const write = (nodes) => localStorage.setItem(KEY, JSON.stringify({
+    savedAt: Date.now(),
+    nodes,
+    currentNodeId: map.currentNodeId,
+  }));
+
   try {
-    localStorage.setItem(KEY, JSON.stringify({
-      savedAt: Date.now(),
-      nodes: map.nodes,
-      currentNodeId: map.currentNodeId,
-    }));
+    write(trimReferences(map.nodes));
   } catch (err) {
-    console.warn("Could not save the map", err);
+    // Out of room: the places and their links matter more than the photos.
+    console.warn("Could not save the map with references, retrying without", err);
+    try {
+      write(map.nodes.map((node) => ({ ...node, reference: null })));
+    } catch (fallbackErr) {
+      console.warn("Could not save the map", fallbackErr);
+    }
   }
 }
 

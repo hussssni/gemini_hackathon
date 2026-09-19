@@ -1,4 +1,4 @@
-import { SENSORS } from "./config.js";
+import { MEMORY, SENSORS } from "./config.js";
 
 // The map is built by exploring, not recorded beforehand. Every survey adds a
 // node; every option seen there is a lead, marked taken once it is walked.
@@ -100,7 +100,7 @@ const settleTaken = (nodes, fromId, toId, outcome) =>
   });
 
 /** Records a survey as a new node, or folds it into one already on the map. */
-export const addSurvey = (map, survey, { heading, steps }) => {
+export const addSurvey = (map, survey, { heading, steps, reference = null }) => {
   const previousId = map.currentNodeId;
   const stepsWalked = Math.max(0, steps - map.steps);
   const known = survey.same_as_node_id ? findNode(map, survey.same_as_node_id) : null;
@@ -129,6 +129,7 @@ export const addSurvey = (map, survey, { heading, steps }) => {
     features: Object.freeze(survey.here.features ?? []),
     distinctiveness: survey.here.distinctiveness ?? 0,
     options: buildOptions(survey.options),
+    reference,
     visits: 1,
     isDeadEnd,
     heading,
@@ -159,6 +160,22 @@ export const unexploredCount = (map) =>
     (total, node) => total + node.options.filter((option) => option.status === "unexplored").length,
     0,
   );
+
+/**
+ * Picks which remembered places to send reference photos of. Everywhere would
+ * be too much payload, so this favours the recently seen and the often visited:
+ * the places an explorer is most likely to stumble back into.
+ */
+export const selectReferences = (map, limit = MEMORY.MAX_REFERENCES) =>
+  map.nodes
+    .filter((node) => typeof node.reference === "string" && node.reference.length > 0)
+    .map((node, index) => ({ node, index }))
+    .sort((a, b) => {
+      const visits = (b.node.visits ?? 1) - (a.node.visits ?? 1);
+      return visits !== 0 ? visits : b.index - a.index;
+    })
+    .slice(0, limit)
+    .map(({ node }) => ({ id: node.id, image: node.reference }));
 
 /** Trims the map to what the model needs, keeping the payload small and honest. */
 export const toServerNodes = (map) =>

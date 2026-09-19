@@ -14,10 +14,6 @@ export const SENSORS = Object.freeze({
 });
 
 export const CAPTURE = Object.freeze({
-  MIN_STEPS_BETWEEN: 12,
-  MIN_MS_BETWEEN: 8000,
-  // Heading change (degrees) that forces a capture — turns are what you forget.
-  TURN_DEGREES: 45,
   FRAME_WIDTH: 640,
   JPEG_QUALITY: 0.72,
 });
@@ -30,9 +26,20 @@ export const QUOTA = Object.freeze({
 });
 
 export const LOST = Object.freeze({
-  PAN_FRAMES: 4,
-  PAN_INTERVAL_MS: 1100,
+  // Eight frames over roughly five seconds. Four was too few to cover a full
+  // turn, so exits behind the explorer were simply never photographed.
+  PAN_FRAMES: 8,
+  PAN_INTERVAL_MS: 650,
   MIN_CONFIDENCE: 0.45,
+});
+
+// Recognising somewhere you have already been is a visual question, so each
+// place keeps a small reference shot and the likeliest candidates are sent back
+// for Gemini to compare against directly, rather than only a written summary.
+export const MEMORY = Object.freeze({
+  THUMB_WIDTH: 320,
+  THUMB_QUALITY: 0.6,
+  MAX_REFERENCES: 4,
 });
 
 export const MARKER = Object.freeze({

@@ -2,11 +2,12 @@ import express from "express";
 import { z } from "zod";
 import { generateJson, MODELS } from "./lib/gemini.js";
 import { isRateLimit } from "./lib/retry.js";
-import { surveyPrompt, surveySchema } from "./lib/prompts.js";
+import { surveyParts, surveySchema } from "./lib/prompts.js";
 
 const PORT = Number(process.env.PORT) || 3000;
 const MAX_IMAGE_CHARS = 2_000_000;
-const MAX_IMAGES = 6;
+const MAX_PAN_FRAMES = 10;
+const MAX_REFERENCES = 4;
 const MAX_NODES = 60;
 
 const frameRecord = z.object({
@@ -33,10 +34,17 @@ const nodeRecord = z.object({
   options: z.array(optionRecord).default([]),
 });
 
+const referenceRecord = z.object({
+  id: z.string(),
+  image: z.string().min(1).max(MAX_IMAGE_CHARS),
+});
+
 const surveyBody = z.object({
-  frames: z.array(frameRecord).min(1).max(MAX_IMAGES),
+  frames: z.array(frameRecord).min(1).max(MAX_PAN_FRAMES),
   nodes: z.array(nodeRecord).max(MAX_NODES).default([]),
   destination: z.string().trim().min(1).max(200),
+  // Reference shots of places already mapped, for recognising a return.
+  memory: z.array(referenceRecord).max(MAX_REFERENCES).default([]),
 });
 
 /**
@@ -100,16 +108,11 @@ app.post("/api/survey", async (req, res) => {
     });
   }
 
-  const { frames, nodes, destination } = parsed.data;
+  const { frames, nodes, destination, memory } = parsed.data;
 
   try {
     const survey = await generateJson({
-      prompt: surveyPrompt({
-        nodes,
-        destination,
-        headings: frames.map((frame) => frame.heading),
-      }),
-      images: frames.map((frame) => frame.image),
+      pieces: surveyParts({ nodes, destination, frames, memory }),
       schema: surveySchema,
       model: MODELS.REASONING,
     });
