@@ -2,15 +2,15 @@ import { CAPTURE, LOST } from "./config.js";
 import { createBudget } from "./budget.js";
 import { createCamera } from "./camera.js";
 import { createSensorTracker, requestSensorAccess } from "./sensors.js";
-import { describeLandmark, locate, routeBack } from "./api.js";
+import { describeLandmark, locate, navigate } from "./api.js";
 import { drawTrail } from "./map.js";
-import { speakRoute, stopSpeaking } from "./speech.js";
+import { primeSpeech, speakPlan, stopSpeaking } from "./speech.js";
 import {
   addLandmark, advance, emptyTrail, headingDelta,
   startTrail, toServerLandmarks,
 } from "./trail.js";
 import {
-  clearRoute, elements, renderLandmarks, renderRoute,
+  clearPlan, elements, renderLandmarks, renderPlan,
   renderStats, setBusy, setStatus, showError,
 } from "./ui.js";
 
@@ -24,6 +24,7 @@ let mode = "idle";
 let matchedLandmarkId = null;
 let describing = false;
 let lastCapture = { at: 0, steps: 0, heading: 0 };
+let lastPlan = null;
 
 function render() {
   renderStats(trail);
@@ -107,7 +108,7 @@ async function startWalk() {
     matchedLandmarkId = null;
     lastCapture = { at: 0, steps: 0, heading: 0 };
     mode = "walking";
-    clearRoute();
+    clearPlan();
     setStatus("Walking — dropping breadcrumbs", "good");
     render();
   } catch (err) {
@@ -129,7 +130,12 @@ async function capturePanorama() {
   return images;
 }
 
-async function findWayBack() {
+/**
+ * Locate the walker from a camera pan, then plan a way to wherever they asked
+ * for. Runs again each time they tap, which is what makes exploring work: walk
+ * the suggested branch, tap again, and the next plan accounts for new ground.
+ */
+async function guideMe() {
   if (trail.landmarks.length === 0) {
     showError("There are no landmarks yet. Start a walk first.");
     return;
@@ -162,21 +168,28 @@ async function findWayBack() {
     matchedLandmarkId = match.matched_landmark_id;
     render();
 
-    setStatus("Working out the way back…", "busy");
+    setStatus("Working out a route…", "busy");
     budget.spend();
-    const route = await routeBack({
+    const plan = await navigate({
       landmarks,
       currentLandmarkId: match.matched_landmark_id,
       facingHeading: Math.round(trail.heading),
+      destination: elements.destination.value.trim(),
     });
 
-    renderRoute(route);
-    speakRoute(route);
-    setStatus(`Found you — confidence ${Math.round(match.confidence * 100)}%`, "good");
+    lastPlan = plan;
+    renderPlan(plan);
+    speakPlan(plan);
+    setStatus(
+      plan.strategy === "explore"
+        ? "Best guess — walk it, then tap again"
+        : `Found you — confidence ${Math.round(match.confidence * 100)}%`,
+      plan.strategy === "explore" ? "warn" : "good",
+    );
   } catch (err) {
     console.error(err);
     showError(err.message);
-    setStatus("Could not find the way back", "warn");
+    setStatus("Could not work out a route", "warn");
   } finally {
     setBusy(false);
   }
@@ -190,13 +203,25 @@ function reset() {
   matchedLandmarkId = null;
   mode = "idle";
   lastCapture = { at: 0, steps: 0, heading: 0 };
-  clearRoute();
+  lastPlan = null;
+  clearPlan();
   setStatus("Ready", "neutral");
   render();
 }
 
-elements.startButton.addEventListener("click", startWalk);
-elements.lostButton.addEventListener("click", findWayBack);
+// primeSpeech must run synchronously inside the tap, before any await, or iOS
+// will refuse to speak the plan that arrives once the requests come back.
+elements.startButton.addEventListener("click", () => {
+  primeSpeech();
+  startWalk();
+});
+elements.lostButton.addEventListener("click", () => {
+  primeSpeech();
+  guideMe();
+});
+elements.replayButton.addEventListener("click", () => {
+  if (lastPlan) speakPlan(lastPlan);
+});
 elements.resetButton.addEventListener("click", reset);
 elements.stepButton.addEventListener("click", () =>
   sensors.simulateStep(Number(elements.headingInput.value)));

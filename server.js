@@ -5,7 +5,7 @@ import { isRateLimit } from "./lib/retry.js";
 import {
   landmarkPrompt, landmarkSchema,
   locatePrompt, locateSchema,
-  routePrompt, routeSchema,
+  navigatePrompt, navigateSchema,
 } from "./lib/prompts.js";
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -31,10 +31,12 @@ const bodies = {
     images: z.array(image).min(1).max(MAX_LOCATE_IMAGES),
     landmarks: z.array(landmarkRecord).min(1),
   }),
-  route: z.object({
+  navigate: z.object({
     landmarks: z.array(landmarkRecord).min(1),
     currentLandmarkId: z.string(),
     facingHeading: heading,
+    // Empty means "back to the start", the default the UI offers.
+    destination: z.string().trim().max(200).default(""),
   }),
 };
 
@@ -77,7 +79,7 @@ app.post("/api/landmark", handler("landmark", ({ image, heading, steps }) =>
 app.post("/api/locate", handler("locate", ({ images, landmarks }) =>
   generateJson({ prompt: locatePrompt({ landmarks }), images, schema: locateSchema })));
 
-app.post("/api/route", handler("route", (data) =>
-  generateJson({ prompt: routePrompt(data), schema: routeSchema })));
+app.post("/api/navigate", handler("navigate", (data) =>
+  generateJson({ prompt: navigatePrompt(data), schema: navigateSchema })));
 
 app.listen(PORT, () => console.log(`Breadcrumb running on http://localhost:${PORT}`));

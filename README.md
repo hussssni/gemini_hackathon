@@ -14,15 +14,31 @@ Built for EmberHacks 2026.
    wrong turn.
 2. **Live map.** Steps and heading are dead-reckoned into a path drawn on a canvas,
    with the landmarks pinned along it.
-3. **"I'm lost."** You pan the camera around. Gemini compares those frames against
+3. **"Guide me."** You pan the camera around. Gemini compares those frames against
    the landmarks it recorded and decides where on the route you are, with a
    confidence score and a request for another look when it is unsure.
-4. **The way back.** Gemini writes the route in reverse, flipping left and right
-   because you are now walking the other way, and the phone speaks it aloud.
+4. **Directions.** You say where you want to get to, or leave it blank for the
+   start. Gemini plans a way there and the phone speaks it aloud.
 
-Gemini does the part that is hard to code: recognising a place from a different
-angle, in different light, and describing it the way a person would. The phone
-sensors only supply the geometry.
+### Going somewhere you have not been
+
+Every landmark records `options_seen` — the paths visible at that spot. Since the
+recorded list is the route actually walked, any option that does not lead to the
+next landmark is a branch nobody took. Those branches are the only leads that exist
+for a destination off the map.
+
+So when you ask for somewhere unrecorded, Gemini picks the most promising untaken
+branch and says why: asked for a road, it will reason that the branch descending
+toward traffic noise beats the one climbing a ridge. The plan comes back marked
+`explore` with a lower confidence, and the app says plainly that it is a guess.
+
+Walk it, tap **Guide me** again, and the next plan accounts for the ground you just
+covered. That loop — guess, walk, re-localize, re-plan — is how it searches.
+
+It cannot navigate terrain it has never seen. It chooses between recorded options
+and reasons about where they probably lead. Gemini does the part that is hard to
+code: recognising a place from a different angle, describing it the way a person
+would, and judging which unexplored path is worth trying.
 
 ## Setup
 
@@ -80,7 +96,7 @@ the two worth calibrating on a real phone before demoing.
 
 | Path | What it does |
 | --- | --- |
-| [server.js](server.js) | Express app, request validation, three Gemini routes |
+| [server.js](server.js) | Express app, request validation, the three Gemini routes |
 | [lib/prompts.js](lib/prompts.js) | Prompts and response schemas |
 | [lib/gemini.js](lib/gemini.js) | Gemini client, structured JSON output |
 | [public/js/sensors.js](public/js/sensors.js) | Step detection, compass heading, iOS permissions |

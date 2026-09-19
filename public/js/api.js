@@ -29,5 +29,5 @@ export const describeLandmark = ({ image, heading, steps }) =>
 export const locate = ({ images, landmarks }) =>
   post("/api/locate", { images, landmarks });
 
-export const routeBack = ({ landmarks, currentLandmarkId, facingHeading }) =>
-  post("/api/route", { landmarks, currentLandmarkId, facingHeading });
+export const navigate = ({ landmarks, currentLandmarkId, facingHeading, destination }) =>
+  post("/api/navigate", { landmarks, currentLandmarkId, facingHeading, destination });

@@ -13,9 +13,13 @@ export const elements = {
   landmarkCount: byId("landmark-count"),
   landmarks: byId("landmarks"),
   route: byId("route"),
+  routeStrategy: byId("route-strategy"),
   routeSummary: byId("route-summary"),
   routeSteps: byId("route-steps"),
+  routeFrontier: byId("route-frontier"),
   routeWarnings: byId("route-warnings"),
+  destination: byId("destination"),
+  replayButton: byId("replay"),
   toast: byId("toast"),
   startButton: byId("start"),
   lostButton: byId("lost"),
@@ -76,14 +80,38 @@ function listItems(target, values) {
   );
 }
 
-export function renderRoute(route) {
-  elements.routeSummary.textContent = route.summary;
-  listItems(elements.routeSteps, route.steps ?? []);
-  listItems(elements.routeWarnings, route.warnings ?? []);
+const STRATEGY_LABELS = Object.freeze({
+  retrace: "Known route",
+  explore: "Best guess",
+  arrived: "You're here",
+});
+
+export function renderPlan(plan) {
+  // A plan with nothing to walk means they are already there, whatever the
+  // model labelled it. Trusting the step list keeps the badge honest.
+  const strategy = (plan.steps ?? []).length === 0 ? "arrived" : plan.strategy;
+
+  elements.routeStrategy.textContent = strategy === "arrived"
+    ? STRATEGY_LABELS.arrived
+    : `${STRATEGY_LABELS[strategy] ?? strategy} · ${Math.round(plan.confidence * 100)}%`;
+  elements.routeStrategy.dataset.strategy = strategy;
+
+  elements.routeSummary.textContent = plan.summary;
+  listItems(elements.routeSteps, plan.steps ?? []);
+  listItems(elements.routeWarnings, plan.warnings ?? []);
+
+  // An explore plan is a gamble on an untaken branch; say why it was picked.
+  if (plan.frontier) {
+    elements.routeFrontier.textContent = `Trying: ${plan.frontier.option} — ${plan.frontier.why}`;
+    elements.routeFrontier.hidden = false;
+  } else {
+    elements.routeFrontier.hidden = true;
+  }
+
   elements.route.hidden = false;
 }
 
-export function clearRoute() {
+export function clearPlan() {
   elements.route.hidden = true;
 }
 

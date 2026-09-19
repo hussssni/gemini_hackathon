@@ -30,11 +30,22 @@
       <div><dt>Landmarks</dt><dd id="landmark-count">0</dd></div>
     </dl>
 
+    <label class="destination" for="destination">
+      Where do you want to get to?
+      <input id="destination" type="text" placeholder="Back to where I started"
+             autocomplete="off" enterkeyhint="go" maxlength="200">
+    </label>
+
     <section id="route" class="route" hidden>
-      <h2>The way back</h2>
+      <div class="route-head">
+        <h2>Directions</h2>
+        <span id="route-strategy" class="badge"></span>
+      </div>
       <p id="route-summary" class="route-summary"></p>
       <ol id="route-steps" class="route-steps"></ol>
+      <p id="route-frontier" class="route-frontier" hidden></p>
       <ul id="route-warnings" class="route-warnings"></ul>
+      <button id="replay" type="button" class="ghost replay">Say it again</button>
     </section>
 
     <section class="log">
@@ -53,7 +64,7 @@
 
   <footer class="actions">
     <button id="start" type="button" class="primary">Start walk</button>
-    <button id="lost" type="button" class="danger">I'm lost</button>
+    <button id="lost" type="button" class="danger">Guide me</button>
     <button id="reset" type="button" class="ghost">Reset</button>
   </footer>
 
