@@ -199,6 +199,7 @@ async function lookAround() {
   } catch (err) {
     console.error(err);
     showError(err.message);
+    speak(err.message);
     setStatus("Could not read the surroundings", "warn");
   } finally {
     surveying = false;
