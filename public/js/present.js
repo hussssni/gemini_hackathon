@@ -25,6 +25,7 @@ export function surveyView({ map, survey, decision, spoken }) {
     .map((entry) => ({ entry, delta: bearingDelta(entry.bearing, reference) }))
     .sort((a, b) => a.delta - b.delta)
     .map(({ entry }) => ({
+      id: entry.id,
       side: relativeSide(entry.bearing, reference),
       state: optionState(map, node, entry),
       description: entry.description,
@@ -51,4 +52,14 @@ export function markerLabel(map, decision) {
     return `${relativeSide(decision.bearing, reference)} path`;
   }
   return "Go this way";
+}
+
+const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+/** The map in words, for anyone who cannot make out the drawing. */
+export function mapSummary(map) {
+  if (map.nodes.length === 0) return "Map: nothing mapped yet.";
+  const { places, forks, untried } = stats(map);
+  const here = map.currentNodeId ? ` You are at ${placeLabel(map, map.currentNodeId)}.` : "";
+  return `Map: ${plural(places, "place")}, ${plural(forks, "fork")}, ${plural(untried, "untried path")}.${here}`;
 }

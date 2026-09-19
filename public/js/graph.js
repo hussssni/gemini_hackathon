@@ -269,6 +269,26 @@ export const commitChoice = (map, { bearing, optionId = null, expectedId = null 
       pending: freeze({ fromId: map.currentNodeId, optionId, bearing, expectedId }),
     });
 
+/**
+ * The explorer's own veto: "not that way", because they know it is a dead end
+ * or not where they are going. A ruled-out path is treated like one that
+ * failed, so it is never suggested again. `ruledOut` false undoes it.
+ */
+export function setRuledOut(map, nodeId, optionId, ruledOut) {
+  const node = findNode(map, nodeId);
+  const target = node?.options.find((entry) => entry.id === optionId && entry.kind === "exit");
+  const from = ruledOut ? "unexplored" : "ruled-out";
+  if (!target || target.status !== from) return map;
+
+  const nodes = updateNode(map.nodes, nodeId, (entry) => ({
+    options: entry.options.map((option) => (option.id === optionId
+      ? { ...option, status: ruledOut ? "ruled-out" : "unexplored" }
+      : option)),
+  }));
+  const cancelsWalk = map.pending?.fromId === nodeId && map.pending.optionId === optionId;
+  return freeze({ ...withNodes(map, nodes), pending: cancelsWalk ? null : map.pending });
+}
+
 export const clearPending = (map) => (map.pending ? freeze({ ...map, pending: null }) : map);
 
 export const trackMotion = (map, { steps, heading }) =>

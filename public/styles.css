@@ -246,7 +246,18 @@ h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color
 .option[data-state="way-back"] { opacity: 0.6; }
 .option-direction { text-transform: capitalize; }
 
-.replay { flex: none; width: 100%; margin-top: 14px; padding: 10px; }
+.survey-actions { display: flex; gap: 8px; margin-top: 14px; }
+.survey-actions button { padding: 10px; }
+.ghost.danger-ghost { color: var(--danger); border-color: rgba(251, 113, 133, 0.45); }
+.veto {
+  grid-column: 1 / -1;
+  justify-self: start;
+  flex: none;
+  margin-top: 6px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+}
+.option[data-state="ruled-out"] { border-left-color: var(--danger); opacity: 0.7; }
 
 .dev { margin: 16px 0; color: var(--muted); font-size: 0.85rem; }
 .dev summary { cursor: pointer; }
@@ -294,4 +305,29 @@ button:disabled { opacity: 0.45; cursor: progress; }
   border: 1px solid var(--danger);
   color: #fecdd3;
   font-size: 0.88rem;
+}
+
+/* ---- Low vision ------------------------------------------------------------
+   Kept as overrides so the base design is unchanged: everything a little
+   larger, grey text a little brighter, nothing smaller than about 13px, clear
+   focus rings, and tap targets big enough to hit without looking closely. */
+:root { --muted: #b8c4d6; }
+html { font-size: 115%; }
+
+.stats dt, .target-label, .pane-label, .legend, .badge, .status,
+.option-promise, .marker-label, .veto { font-size: max(0.8rem, 13px); }
+.option-direction { font-size: 0.95rem; }
+.option p, .survey-here { font-size: 0.95rem; }
+
+.marker-ring { width: 76px; height: 76px; font-size: 2.3rem; border-width: 4px; }
+.marker-label { font-size: 0.95rem; font-weight: 700; max-width: 60vw; padding: 6px 12px; }
+
+button { min-height: 48px; }
+.veto { min-height: 44px; }
+
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.target:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .marker { transition: none; }
 }

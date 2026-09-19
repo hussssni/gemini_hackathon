@@ -7,7 +7,7 @@ import { sideLetter } from "./guidance.js";
 // legible: forks are numbered diamonds, each branch is labelled left, ahead or
 // right as it was first walked into, and its line says what became of it:
 //   solid teal   walked, still worth something
-//   rose with ✕  walked, and it failed (dead end, loop, fully tried)
+//   rose with ✕  failed (dead end, loop, fully tried) or ruled out by you
 //   dashed amber untried
 //   bold pink    the way you are being sent right now
 
@@ -144,7 +144,12 @@ function drawStubs(context, map, project) {
         const tip = { x: origin.x + direction.x * MAP.STUB_PX, y: origin.y + direction.y * MAP.STUB_PX };
         const chosen = map.pending?.fromId === node.id && map.pending.optionId === entry.id;
 
-        if (!entry.leadsTo) {
+        if (entry.status === "ruled-out") {
+          context.strokeStyle = PALETTE.failed;
+          context.lineWidth = 2;
+          line(context, origin, tip);
+          cross(context, tip, PALETTE.failed);
+        } else if (!entry.leadsTo) {
           context.strokeStyle = chosen ? PALETTE.chosen : PALETTE.untried;
           context.lineWidth = chosen ? 4 : 2;
           context.setLineDash(chosen ? [] : [4, 4]);
@@ -154,7 +159,9 @@ function drawStubs(context, map, project) {
         }
         if (fork) {
           const at = { x: origin.x + direction.x * (MAP.STUB_PX + 10), y: origin.y + direction.y * (MAP.STUB_PX + 10) };
-          const color = chosen ? PALETTE.chosen : entry.leadsTo ? PALETTE.label : PALETTE.untried;
+          const color = chosen ? PALETTE.chosen
+            : entry.status === "ruled-out" ? PALETTE.failed
+            : entry.leadsTo ? PALETTE.label : PALETTE.untried;
           text(context, sideLetter(entry.bearing, node.arrivalBearing ?? 0), at, color, 11, 700);
         }
       });

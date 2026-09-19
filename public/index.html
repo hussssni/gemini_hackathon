@@ -23,7 +23,7 @@
 
     <section class="panes">
       <div class="pane pane-camera">
-        <video id="preview" playsinline muted></video>
+        <video id="preview" playsinline muted aria-hidden="true"></video>
         <div id="marker" class="marker" hidden>
           <span id="marker-ring" class="marker-ring"></span>
           <span id="marker-label" class="marker-label"></span>
@@ -31,7 +31,7 @@
         <span class="pane-label">Camera</span>
       </div>
       <div class="pane pane-map">
-        <canvas id="map"></canvas>
+        <canvas id="map" role="img" aria-label="Map: nothing mapped yet."></canvas>
         <span class="pane-label">Map</span>
       </div>
     </section>
@@ -59,7 +59,10 @@
       <p id="survey-here" class="survey-here"></p>
       <h3>Ways out of here</h3>
       <ul id="survey-options" class="options"></ul>
-      <button id="replay" type="button" class="ghost replay">Say it again</button>
+      <div class="survey-actions">
+        <button id="replay" type="button" class="ghost">Say it again</button>
+        <button id="reject" type="button" class="ghost danger-ghost" hidden>Not that way</button>
+      </div>
     </section>
 
     <details class="dev">

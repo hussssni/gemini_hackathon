@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { addSurvey, commitChoice, currentNode, emptyMap, trackMotion } from "../public/js/graph.js";
 import { decide } from "../public/js/decide.js";
-import { markerLabel, stats, surveyView } from "../public/js/present.js";
+import { mapSummary, markerLabel, stats, surveyView } from "../public/js/present.js";
 import { screenPosition } from "../public/js/marker.js";
 import { at, option, survey } from "./helpers.js";
 
@@ -34,4 +34,10 @@ test("the marker sits where the bearing falls in the camera view", () => {
 
 test("an empty map has no panel", () => {
   assert.equal(surveyView({ map: emptyMap(), survey: survey(), decision: { kind: "stuck" }, spoken: "" }), null);
+});
+
+test("the map has a text summary for screen readers", () => {
+  assert.equal(mapSummary(emptyMap()), "Map: nothing mapped yet.");
+  const map = addSurvey(emptyMap(), survey({ options: [option(0), option(90)] }), at(0));
+  assert.equal(mapSummary(map), "Map: 1 place, 1 fork, 2 untried paths. You are at fork 1.");
 });

@@ -7,11 +7,13 @@ import { createMarker } from "./marker.js";
 import { capturePan } from "./pan.js";
 import { primeSpeech, speak, stopSpeaking } from "./speech.js";
 import { turnPhrase } from "./guidance.js";
-import { addSurvey, commitChoice, emptyMap, fromSaved, trackMotion } from "./graph.js";
+import {
+  addSurvey, commitChoice, emptyMap, fromSaved, setRuledOut, trackMotion,
+} from "./graph.js";
 import { decide } from "./decide.js";
 import { narrate } from "./narrate.js";
 import { selectReferences, serverArrival, toServerNodes } from "./recall.js";
-import { markerLabel, stats, surveyView } from "./present.js";
+import { mapSummary, markerLabel, stats, surveyView } from "./present.js";
 import { clearMap, describeAge, loadMap, saveMap } from "./storage.js";
 import {
   clearArrived, clearSurvey, elements, renderStats, renderSurvey,
@@ -41,6 +43,7 @@ let compassLive = false;
 function render() {
   renderStats(stats(map));
   drawMap(elements.canvas, map);
+  elements.canvas.setAttribute("aria-label", mapSummary(map));
 }
 
 /**
@@ -56,6 +59,8 @@ function announceTurn(state) {
   if (!changed || !settled) return;
 
   guidance = { zone: state.zone, spokenAt: Date.now() };
+  // A distinct double buzz when lined up, so "go now" can be felt as well as heard.
+  if (state.aligned) navigator.vibrate?.([90, 60, 90]);
   speak(state.aligned ? "Straight ahead, go now" : turnPhrase(state.delta));
 }
 
@@ -109,11 +114,12 @@ const surveyContext = (destination) => ({
   expected_node_id: map.pending?.expectedId ?? null,
 });
 
-/** Acts on a decision: point the marker, say it, and show it. */
-function act(result, decision, destination) {
+/** Acts on a decision: point the marker, say it, and show it. `brief` is for a
+ *  re-decision, which only says the new instruction. */
+function act(result, decision, destination, brief = false) {
   const spoken = decision.kind === "arrived"
     ? `You have reached ${destination}. ${result.spoken}`
-    : narrate({ map, decision, survey: result, heading: map.heading });
+    : narrate({ map, decision, survey: result, heading: map.heading, brief });
 
   last = { result, decision, destination };
   renderSurvey(surveyView({ map, survey: result, decision, spoken }));
@@ -184,10 +190,7 @@ async function lookAround() {
       references,
       facing: frames[0].heading,
     });
-    const decision = decide(map, result);
-    if (decision.kind === "explore" || decision.kind === "backtrack") {
-      map = commitChoice(map, decision);
-    }
+    const decision = redecide(result);
     saveMap(map);
 
     surveying = false;
@@ -201,6 +204,30 @@ async function lookAround() {
     surveying = false;
     setBusy(false);
   }
+}
+
+/** Decides again at this place and commits to it, as after a survey. */
+function redecide(result) {
+  const decision = decide(map, result);
+  if (decision.kind === "explore" || decision.kind === "backtrack") {
+    map = commitChoice(map, decision);
+  }
+  return decision;
+}
+
+/**
+ * The explorer's veto on a path at this place, or the undo of one. Either way
+ * the choice is made again at once and the new instruction said.
+ */
+function ruleOut(optionId, ruledOut) {
+  if (!last || surveying || !optionId) return;
+  const before = map;
+  map = setRuledOut(map, map.currentNodeId, optionId, ruledOut);
+  if (map === before) return;
+  const decision = redecide(last.result);
+  saveMap(map);
+  act(last.result, decision, last.destination, ruledOut ? true : "Okay, that path is back.");
+  render();
 }
 
 function replay() {
@@ -235,6 +262,18 @@ elements.lookButton.addEventListener("click", () => {
   lookAround();
 });
 elements.replayButton.addEventListener("click", replay);
+elements.rejectButton.addEventListener("click", () => {
+  primeSpeech();
+  ruleOut(last?.decision.optionId, true);
+});
+// One listener for every row's "Not this way" / "Undo", however often the
+// list is rebuilt.
+elements.surveyOptions.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-option-id]");
+  if (!button) return;
+  primeSpeech();
+  ruleOut(button.dataset.optionId, button.dataset.ruledOut === "true");
+});
 elements.resetButton.addEventListener("click", reset);
 elements.stepButton.addEventListener("click", () =>
   sensors.simulateStep(Number(elements.headingInput.value)));

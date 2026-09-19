@@ -22,6 +22,7 @@ export const elements = {
   markerRing: byId("marker-ring"),
   markerLabel: byId("marker-label"),
   replayButton: byId("replay"),
+  rejectButton: byId("reject"),
   startButton: byId("start"),
   lookButton: byId("look"),
   resetButton: byId("reset"),
@@ -57,6 +58,7 @@ const STATE_LABELS = Object.freeze({
   "dead-end": "dead end",
   "loops-back": "loops back",
   exhausted: "all tried",
+  "ruled-out": "ruled out",
   open: "walked",
 });
 
@@ -64,7 +66,22 @@ const STATE_LABELS = Object.freeze({
  * One row per way out of this place, as the map now knows it: which side it
  * is on, what came of it, and whether it is the one being taken.
  */
-function optionRow({ side, state, description, promise, isPick }) {
+/** "Not this way" on an untried path, "Undo" on one already ruled out. */
+function vetoButton({ id, side, state }) {
+  if (state !== "untried" && state !== "ruled-out") return null;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost veto";
+  button.dataset.optionId = id;
+  button.dataset.ruledOut = String(state === "untried");
+  button.textContent = state === "untried" ? "Not this way" : "Undo";
+  button.setAttribute("aria-label", state === "untried"
+    ? `Rule out the ${side} path`
+    : `Put the ${side} path back`);
+  return button;
+}
+
+function optionRow({ id, side, state, description, promise, isPick }) {
   const item = document.createElement("li");
   item.className = "option";
   item.dataset.state = state;
@@ -83,7 +100,8 @@ function optionRow({ side, state, description, promise, isPick }) {
   const text = document.createElement("p");
   text.textContent = description;
 
-  item.append(direction, tag, text);
+  const veto = vetoButton({ id, side, state });
+  item.append(direction, tag, text, ...(veto ? [veto] : []));
   return item;
 }
 
@@ -93,6 +111,8 @@ function optionRow({ side, state, description, promise, isPick }) {
  * @param view.rows   branches, already described by the caller
  */
 export function renderSurvey({ badge, tone, spoken, here, rows }) {
+  // The big button only makes sense while something is being suggested.
+  elements.rejectButton.hidden = !rows.some((row) => row.isPick && row.state === "untried");
   elements.surveyBadge.textContent = badge;
   elements.surveyBadge.dataset.tone = tone;
   elements.surveySpoken.textContent = spoken;

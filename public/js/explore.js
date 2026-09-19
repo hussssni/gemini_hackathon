@@ -48,6 +48,7 @@ export function isExhausted(map, id, seen = new Set()) {
 /**
  * What came of a way out, in the terms the explorer cares about:
  *   untried    nobody has walked it
+ *   ruled-out  the explorer said not that way
  *   way-back   the way they arrived
  *   dead-end   walked, and the place it led to has no way on
  *   loops-back walked, and it came out somewhere already mapped
@@ -57,6 +58,7 @@ export function isExhausted(map, id, seen = new Set()) {
 export function optionState(map, node, entry) {
   if (entry.kind === "back") return "way-back";
   if (entry.status === "unexplored") return "untried";
+  if (entry.status === "ruled-out") return "ruled-out";
   if (entry.loopsBack) return "loops-back";
   const target = findNode(map, entry.leadsTo);
   if (!target) return "open";
@@ -65,7 +67,7 @@ export function optionState(map, node, entry) {
   return isExhausted(map, target.id, new Set([node.id])) ? "exhausted" : "open";
 }
 
-export const FAILED_STATES = Object.freeze(new Set(["dead-end", "loops-back", "exhausted"]));
+export const FAILED_STATES = Object.freeze(new Set(["dead-end", "loops-back", "exhausted", "ruled-out"]));
 
 export const untriedCount = (map) =>
   map.nodes.reduce((total, node) =>

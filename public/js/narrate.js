@@ -13,6 +13,7 @@ const FAILURE_PHRASES = Object.freeze({
   "dead-end": "was a dead end",
   "loops-back": "just loops back",
   exhausted: "has been fully tried",
+  "ruled-out": "was ruled out",
 });
 
 const joinWords = (words) => (words.length <= 1
@@ -98,12 +99,18 @@ function actionSentence(map, node, decision, reference, heading) {
 
 /**
  * The full sentence spoken after a survey, leading with where you are, then
- * what failed before, then what to do, then what to watch out for.
+ * what failed before, then what to do, then what to watch out for. `brief` is
+ * for a re-decision after the explorer ruled a path out: they know where they
+ * are, so only the new instruction is said.
  */
-export function narrate({ map, decision, survey, heading }) {
+export function narrate({ map, decision, survey, heading, brief = false }) {
   const node = currentNode(map) ?? findNode(map, map.currentNodeId);
   if (!node) return survey.spoken ?? "";
   const reference = referenceBearing(map, node);
+  if (brief) {
+    const lead = typeof brief === "string" ? brief : "Okay, not that way.";
+    return `${lead} ${actionSentence(map, node, decision, reference, heading)}`;
+  }
   return [
     placeSentence(map, node, reference),
     historySentence(map, node, reference),
