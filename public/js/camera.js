@@ -1,4 +1,4 @@
-import { CAPTURE, MEMORY } from "./config.js";
+import { CAMERA, CAPTURE } from "./config.js";
 
 const BASE64_PREFIX = /^data:image\/jpeg;base64,/;
 
@@ -51,25 +51,19 @@ export function createCamera(videoElement) {
 
   const isRunning = () => stream !== null;
 
-  return { start, stop, captureFrame, isRunning };
+  const horizontalFov = () =>
+    horizontalFovFor(videoElement.videoWidth, videoElement.videoHeight);
+
+  return { start, stop, captureFrame, isRunning, horizontalFov };
 }
 
 /**
- * Pairs each frame with the compass heading it was shot at. The pan is the only
- * moment the phone sweeps the whole scene, so these headings are what turn "a
- * path over there" into a bearing we can point at later.
+ * Field of view across the width of a frame. Held upright, a phone's frame is
+ * its sensor's short side, which sees far less than the long side: using the
+ * long-side figure there would overstate every in-photo offset.
  */
-export function frameAt(camera, heading) {
-  // A phone with no usable compass reports nothing rather than zero, and an
-  // unusable heading must not become a bearing the marker points at.
-  const safe = Number.isFinite(heading) ? ((Math.round(heading) % 360) + 360) % 360 : 0;
-  return Object.freeze({ image: camera.captureFrame(), heading: safe });
-}
-
-/** A small keepsake of a place, stored so it can be recognised on a return. */
-export function referenceShot(camera) {
-  return camera.captureFrame({
-    width: MEMORY.THUMB_WIDTH,
-    quality: MEMORY.THUMB_QUALITY,
-  });
+export function horizontalFovFor(width, height, longSide = CAMERA.LONG_SIDE_FOV_DEGREES) {
+  if (!width || !height || width >= height) return longSide;
+  const halfLong = (longSide / 2) * (Math.PI / 180);
+  return (2 * Math.atan(Math.tan(halfLong) * (width / height)) * 180) / Math.PI;
 }

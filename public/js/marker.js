@@ -6,7 +6,11 @@ import { bearingDelta, sideOf, turnPhrase, zoneFor } from "./guidance.js";
  * compass bearing, not to the screen, so turning the phone sweeps it across the
  * view until it settles on the real-world direction to walk.
  */
-export function createMarker({ root, ring, label }) {
+/** Where a bearing `delta` degrees off-centre lands across the camera view, 0..1. */
+export const screenPosition = (delta, fovDegrees) =>
+  0.5 + Math.tan((delta * Math.PI) / 180) / (2 * Math.tan((fovDegrees * Math.PI) / 360));
+
+export function createMarker({ root, ring, label, getFov }) {
   let targetHeading = null;
   let targetLabel = "";
   let wasBehind = false;
@@ -38,9 +42,9 @@ export function createMarker({ root, ring, label }) {
       root.dataset.state = "behind";
       ring.textContent = "↺";
     } else {
-      const halfFov = MARKER.CAMERA_FOV_DEGREES / 2;
-      if (Math.abs(delta) <= halfFov) {
-        root.style.left = `${50 + (delta / MARKER.CAMERA_FOV_DEGREES) * 100}%`;
+      const fov = getFov();
+      if (Math.abs(delta) <= fov / 2) {
+        root.style.left = `${screenPosition(delta, fov) * 100}%`;
         root.dataset.state = Math.abs(delta) <= MARKER.ALIGNED_DEGREES ? "aligned" : "in-view";
         ring.textContent = root.dataset.state === "aligned" ? "◉" : "○";
       } else {

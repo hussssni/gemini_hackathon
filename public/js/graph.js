@@ -1,196 +1,277 @@
-import { MEMORY, SENSORS } from "./config.js";
+import { GRAPH, MEMORY, SENSORS } from "./config.js";
+import { angleBetween, normalizeDegrees } from "./heading.js";
 
-// The map is built by exploring, not recorded beforehand. Every survey adds a
-// node; every option seen there is a lead, marked taken once it is walked.
-// Everything here returns new objects rather than mutating.
+// The map is built by exploring, not recorded beforehand. Every new place is a
+// node; every way out seen there is an option. An option is either an "exit"
+// (a lead worth exploring) or the single "back" option, the way the explorer
+// arrived. Walking an option links it to the node it led to. Everything here
+// returns new frozen objects rather than mutating.
 
-export const emptyMap = () =>
-  Object.freeze({ nodes: Object.freeze([]), currentNodeId: null, heading: 0, steps: 0 });
+const freeze = Object.freeze;
+const freezeNode = (node) => freeze({
+  ...node,
+  options: freeze(node.options.map((entry) => freeze({ ...entry }))),
+  references: freeze([...(node.references ?? [])]),
+});
 
-/** Rebuilds a map saved on a previous visit. Position and links come back with
- *  it; the live step count does not, since the walk that produced it is over. */
-export const fromSaved = (saved) =>
-  Object.freeze({
-    nodes: Object.freeze(saved.nodes.map((node) =>
-      Object.freeze({ ...node, options: Object.freeze(node.options.map(Object.freeze)) }))),
-    currentNodeId: saved.currentNodeId,
-    heading: 0,
-    steps: 0,
-  });
+export const emptyMap = () => freeze({
+  nodes: freeze([]),
+  currentNodeId: null,
+  heading: 0,
+  steps: 0,
+  // Live step count at the last stop. Null until one is recorded this session,
+  // so a restored map does not measure a walk against a stale counter.
+  stepsAtStop: null,
+  // The option the explorer was sent down and has not yet arrived from.
+  pending: null,
+  lastEvent: null,
+});
 
-const nodeId = (index) => `n${index + 1}`;
+/** Rebuilds a saved map. Position and links come back; the live walk does not. */
+export const fromSaved = (saved) => freeze({
+  ...emptyMap(),
+  nodes: freeze(saved.nodes.map(freezeNode)),
+  currentNodeId: saved.currentNodeId ?? null,
+});
 
 export const findNode = (map, id) => map.nodes.find((node) => node.id === id) ?? null;
-
 export const currentNode = (map) => findNode(map, map.currentNodeId);
 
-/** Options already carry an absolute bearing, measured when the pan was shot. */
-export const optionHeading = (_node, option) => option.bearing;
+const nodeId = (index) => `n${index + 1}`;
+const gap = (a, b) => Math.abs(angleBetween(a, b));
 
-const toPoint = (from, heading, distanceMeters) => {
+export const stepsSinceStop = (map) =>
+  map.stepsAtStop === null ? 0 : Math.max(0, map.steps - map.stepsAtStop);
+
+const toPoint = (from, heading, meters) => {
   const radians = (heading * Math.PI) / 180;
-  return {
-    x: from.x + Math.sin(radians) * distanceMeters,
-    y: from.y - Math.cos(radians) * distanceMeters,
-  };
+  return { x: from.x + Math.sin(radians) * meters, y: from.y - Math.cos(radians) * meters };
 };
 
 /**
- * Places a new node by dead reckoning from the node just left: the steps walked
- * since, along the heading of the option that was followed.
+ * Where the explorer probably is now, by dead reckoning from the last stop
+ * along the way they were sent. With `nominal`, a walk the step counter missed
+ * still counts as one typical leg, which is what node placement needs.
  */
-const placeNode = (map, stepsWalked) => {
-  const previous = currentNode(map);
-  if (!previous) return { x: 0, y: 0 };
+export function estimatePosition(map, { nominal = false } = {}) {
+  const from = currentNode(map);
+  if (!from) return null;
+  const walked = stepsSinceStop(map);
+  const meters = walked > 0
+    ? walked * SENSORS.STRIDE_METERS
+    : nominal ? SENSORS.NOMINAL_LEG_METERS : 0;
+  return toPoint(from, map.pending?.bearing ?? map.heading, meters);
+}
 
-  const taken = previous.options.find((option) => option.status === "taken-pending");
-  const heading = taken ? taken.bearing : previous.heading;
+const withNodes = (map, nodes) => freeze({ ...map, nodes: freeze(nodes.map(freezeNode)) });
 
-  // Step detection fails on plenty of phones, and without a fallback every node
-  // would land on the last one and the map would look like a single dot.
-  const distance = stepsWalked > 0
-    ? stepsWalked * SENSORS.STRIDE_METERS
-    : SENSORS.NOMINAL_LEG_METERS;
+const updateNode = (nodes, id, change) =>
+  nodes.map((node) => (node.id === id ? { ...node, ...change(node) } : node));
 
-  return toPoint(previous, heading, distance);
+/** Picks which pan option is the way the explorer came, if any. */
+function findWayBack(options, backBearing) {
+  if (backBearing === null) return -1;
+  const scored = options
+    .map((entry, index) => ({ index, flagged: entry.is_way_back, off: gap(entry.bearing, backBearing) }))
+    .filter(({ flagged, off }) => flagged || off <= GRAPH.SAME_DIRECTION_DEGREES)
+    // Gemini's own "that is where you came from" beats compass proximity:
+    // drift moves bearings, it does not move the path.
+    .sort((a, b) => Number(b.flagged) - Number(a.flagged) || a.off - b.off);
+  return scored[0]?.index ?? -1;
+}
+
+/** Collapses exits the pan saw twice from neighbouring photos. */
+function dedupe(options) {
+  const ranked = [...options].sort((a, b) => (b.promise ?? 0) - (a.promise ?? 0));
+  return ranked
+    .reduce((kept, entry) =>
+      kept.some((other) => gap(other.bearing, entry.bearing) <= GRAPH.DUPLICATE_EXIT_DEGREES)
+        ? kept
+        : [...kept, entry], [])
+    .slice(0, GRAPH.MAX_OPTIONS);
+}
+
+const exitFrom = (entry, id) => ({
+  id,
+  kind: "exit",
+  bearing: normalizeDegrees(Math.round(entry.bearing)),
+  description: entry.description,
+  promise: entry.promise ?? 0,
+  status: "unexplored",
+  leadsTo: null,
+  loopsBack: false,
+});
+
+function buildOptions(surveyOptions, arrival) {
+  const backBearing = arrival ? normalizeDegrees(arrival.bearing + 180) : null;
+  const backIndex = findWayBack(surveyOptions, backBearing);
+  const exits = dedupe(surveyOptions.filter((_, index) => index !== backIndex))
+    .map((entry, index) => exitFrom(entry, `o${index + 1}`));
+
+  if (!arrival) return exits;
+  const seen = surveyOptions[backIndex];
+  return [...exits, {
+    id: "back",
+    kind: "back",
+    bearing: normalizeDegrees(Math.round(seen?.bearing ?? backBearing)),
+    description: seen?.description ?? "The way you came",
+    promise: 0,
+    status: "taken",
+    leadsTo: arrival.fromId,
+    loopsBack: false,
+  }];
+}
+
+/** Records where the option just walked actually went. */
+const settlePending = (nodes, pending, toId, loopsBack) => {
+  if (!pending) return nodes;
+  return updateNode(nodes, pending.fromId, (node) => ({
+    options: node.options.map((entry) => {
+      if (entry.id !== pending.optionId) return entry;
+      // Retracing a known link teaches nothing new about it.
+      if (entry.leadsTo === toId) return entry;
+      return { ...entry, status: "taken", leadsTo: toId, loopsBack };
+    }),
+  }));
 };
 
-const buildOptions = (options = []) =>
-  Object.freeze(options.map((option, index) =>
-    Object.freeze({
-      id: `o${index + 1}`,
-      bearing: ((option.bearing % 360) + 360) % 360,
-      description: option.description,
-      promise: option.promise ?? 0,
-      status: "unexplored",
-    })));
-
-/** Marks the option the explorer was told to take, so the next node links to it. */
-export const commitRecommendation = (map, optionIndex) => {
-  const node = currentNode(map);
-  if (!node || !Number.isInteger(optionIndex)) return map;
-
-  const options = node.options.map((option, index) =>
-    index === optionIndex - 1 && option.status === "unexplored"
-      ? Object.freeze({ ...option, status: "taken-pending" })
-      : option);
-
-  return Object.freeze({
-    ...map,
-    nodes: Object.freeze(map.nodes.map((entry) =>
-      entry.id === node.id ? Object.freeze({ ...entry, options: Object.freeze(options) }) : entry)),
-  });
-};
+/** Folds a fresh pan into a place already on the map: new exits are added,
+ *  and ones already known get the new promise score. */
+function mergeOptions(existing, surveyOptions) {
+  const fresh = dedupe(surveyOptions.filter((entry) => !entry.is_way_back));
+  return fresh.reduce((options, entry) => {
+    const match = options
+      .map((known, index) => ({ index, off: gap(known.bearing, entry.bearing) }))
+      .filter(({ off }) => off <= GRAPH.MERGE_DEGREES)
+      .sort((a, b) => a.off - b.off)[0];
+    if (match) {
+      return options.map((known, index) =>
+        index === match.index ? { ...known, promise: entry.promise ?? known.promise } : known);
+    }
+    if (options.length >= GRAPH.MAX_OPTIONS) return options;
+    return [...options, exitFrom(entry, `o${options.length + 1}`)];
+  }, existing);
+}
 
 /**
- * Records what came of the branch just walked. An option that led nowhere, or
- * looped back to somewhere already known, is not a lead any more — and saying
- * so is what stops an explorer trying the same wrong turn twice.
+ * Walking from A into known place K proves a path from K back to A. Mark the
+ * matching untried exit at K as that path, so the far end of a loop is not
+ * left looking like a fresh lead.
  */
-const settleTaken = (nodes, fromId, toId, outcome) =>
-  nodes.map((node) => {
-    if (node.id !== fromId) return node;
-    return Object.freeze({
-      ...node,
-      options: Object.freeze(node.options.map((option) =>
-        option.status === "taken-pending"
-          ? Object.freeze({ ...option, status: "taken", leadsTo: toId, outcome })
-          : option)),
-    });
-  });
+function linkReturn(options, arrival) {
+  if (!arrival || options.some((entry) => entry.leadsTo === arrival.fromId)) return options;
+  const backBearing = normalizeDegrees(arrival.bearing + 180);
+  const match = options
+    .map((entry, index) => ({ entry, index, off: gap(entry.bearing, backBearing) }))
+    .filter(({ entry, off }) => entry.status === "unexplored" && off <= GRAPH.SAME_DIRECTION_DEGREES)
+    .sort((a, b) => a.off - b.off)[0];
+  if (match) {
+    return options.map((entry, index) => index === match.index
+      ? { ...entry, status: "taken", leadsTo: arrival.fromId, loopsBack: true }
+      : entry);
+  }
+  return [...options, {
+    ...exitFrom({ bearing: backBearing, description: "Path back the way you came", promise: 0 }, `o${options.length + 1}`),
+    status: "taken",
+    leadsTo: arrival.fromId,
+    loopsBack: true,
+  }];
+}
+
+/** Keeps a couple of old views and adds the newest, so a place stays
+ *  recognisable from more than the one angle it was first seen at. */
+const mergeReferences = (old, fresh) =>
+  [...fresh.slice(0, 1), ...old].slice(0, MEMORY.VIEWS_PER_PLACE);
+
+/** The node Gemini says this is, if it is sure enough and the node is real. */
+function recognise(map, survey) {
+  const id = survey.same_as_node_id;
+  if (!id || !findNode(map, id)) return null;
+  const threshold = id === map.pending?.expectedId
+    ? GRAPH.EXPECTED_MATCH_CONFIDENCE
+    : GRAPH.MATCH_CONFIDENCE;
+  return (survey.match_confidence ?? 0) >= threshold ? id : null;
+}
+
+const arrivalOf = (map) => (map.pending
+  ? { fromId: map.pending.fromId, bearing: map.pending.bearing }
+  : null);
+
+const settled = (map, nodes, currentNodeId, { heading, steps }, type, arrival = null) => freeze({
+  ...withNodes(map, nodes),
+  currentNodeId,
+  heading,
+  steps,
+  stepsAtStop: steps,
+  pending: null,
+  // The way they walked in, so this visit's left and right can be named.
+  lastEvent: freeze({ type, nodeId: currentNodeId, arrivalBearing: arrival?.bearing ?? null }),
+});
 
 /** Records a survey as a new node, or folds it into one already on the map. */
-export const addSurvey = (map, survey, { heading, steps, reference = null }) => {
-  const previousId = map.currentNodeId;
-  const stepsWalked = Math.max(0, steps - map.steps);
-  const known = survey.same_as_node_id ? findNode(map, survey.same_as_node_id) : null;
-  const isDeadEnd = (survey.options ?? []).length === 0;
+export function addSurvey(map, survey, motion) {
+  const { references = [] } = motion;
+  const surveyOptions = survey.options ?? [];
+  const knownId = recognise(map, survey);
 
-  if (known) {
-    // Loop closure: link back instead of adding a duplicate place, and record
-    // that the branch merely came back to somewhere already mapped.
-    return Object.freeze({
-      ...map,
-      nodes: Object.freeze(
-        settleTaken(map.nodes, previousId, known.id, "loops-back")
-          .map((node) => node.id === known.id
-            ? Object.freeze({ ...node, visits: (node.visits ?? 1) + 1 })
-            : node)),
-      currentNodeId: known.id,
-      heading,
-      steps,
-    });
+  if (knownId && knownId === map.currentNodeId) {
+    // Looked again without going anywhere: refresh, and forget the walk.
+    const nodes = updateNode(map.nodes, knownId, (node) => ({
+      options: mergeOptions(node.options, surveyOptions),
+      references: mergeReferences(node.references, references),
+      isGoal: node.isGoal || survey.arrived === true,
+    }));
+    return settled(map, nodes, knownId, motion, "resurvey");
   }
 
-  const position = placeNode(map, stepsWalked);
-  const node = Object.freeze({
-    id: nodeId(map.nodes.length),
-    description: survey.here.description,
-    features: Object.freeze(survey.here.features ?? []),
-    distinctiveness: survey.here.distinctiveness ?? 0,
-    options: buildOptions(survey.options),
-    reference,
-    visits: 1,
-    isDeadEnd,
-    heading,
-    steps,
-    ...position,
-  });
+  const arrival = arrivalOf(map);
 
-  return Object.freeze({
-    ...map,
-    nodes: Object.freeze([
-      ...settleTaken(map.nodes, previousId, node.id, isDeadEnd ? "dead-end" : "open"),
-      node,
-    ]),
-    currentNodeId: node.id,
-    heading,
-    steps,
-  });
-};
+  if (knownId) {
+    const linked = settlePending(map.nodes, map.pending, knownId, true);
+    const nodes = updateNode(linked, knownId, (node) => ({
+      options: mergeOptions(linkReturn(node.options, arrival), surveyOptions),
+      references: mergeReferences(node.references, references),
+      visits: (node.visits ?? 1) + 1,
+      isGoal: node.isGoal || survey.arrived === true,
+    }));
+    return settled(map, nodes, knownId, motion, "revisit", arrival);
+  }
+
+  const id = nodeId(map.nodes.length);
+  const node = {
+    id,
+    description: survey.here?.description ?? "",
+    features: survey.here?.features ?? [],
+    distinctiveness: survey.here?.distinctiveness ?? 0,
+    options: buildOptions(surveyOptions, arrival),
+    references: references.slice(0, MEMORY.VIEWS_PER_PLACE),
+    visits: 1,
+    arrivedFrom: arrival?.fromId ?? null,
+    // Left and right at this place are named relative to the way in. At the
+    // very first stop there is no way in, so use the way the explorer faced
+    // when the pan began, not wherever the phone ended up afterwards.
+    arrivalBearing: arrival?.bearing ?? motion.facing ?? motion.heading,
+    isGoal: survey.arrived === true,
+    steps: motion.steps,
+    ...(map.nodes.length === 0 ? { x: 0, y: 0 } : estimatePosition(map, { nominal: true })),
+  };
+
+  const nodes = [...settlePending(map.nodes, map.pending, id, false), node];
+  return settled(map, nodes, id, motion, "new", arrival);
+}
+
+/** Sends the explorer down one way out. It is settled at the next stop. */
+export const commitChoice = (map, { bearing, optionId = null, expectedId = null }) =>
+  map.currentNodeId === null
+    ? map
+    : freeze({
+      ...map,
+      pending: freeze({ fromId: map.currentNodeId, optionId, bearing, expectedId }),
+    });
+
+export const clearPending = (map) => (map.pending ? freeze({ ...map, pending: null }) : map);
 
 export const trackMotion = (map, { steps, heading }) =>
   steps === map.steps && heading === map.heading
     ? map
-    : Object.freeze({ ...map, steps, heading });
-
-/** Leads worth trying: never walked, and not already known to fail. */
-export const unexploredCount = (map) =>
-  map.nodes.reduce(
-    (total, node) => total + node.options.filter((option) => option.status === "unexplored").length,
-    0,
-  );
-
-/**
- * Picks which remembered places to send reference photos of. Everywhere would
- * be too much payload, so this favours the recently seen and the often visited:
- * the places an explorer is most likely to stumble back into.
- */
-export const selectReferences = (map, limit = MEMORY.MAX_REFERENCES) =>
-  map.nodes
-    .filter((node) => typeof node.reference === "string" && node.reference.length > 0)
-    .map((node, index) => ({ node, index }))
-    .sort((a, b) => {
-      const visits = (b.node.visits ?? 1) - (a.node.visits ?? 1);
-      return visits !== 0 ? visits : b.index - a.index;
-    })
-    .slice(0, limit)
-    .map(({ node }) => ({ id: node.id, image: node.reference }));
-
-/** Trims the map to what the model needs, keeping the payload small and honest. */
-export const toServerNodes = (map) =>
-  map.nodes.map((node) => ({
-    id: node.id,
-    description: node.description,
-    features: node.features,
-    steps: node.steps,
-    is_current: node.id === map.currentNodeId,
-    times_visited: node.visits ?? 1,
-    options: node.options.map((option) => ({
-      bearing: Number.isFinite(option.bearing) ? Math.round(option.bearing) : 0,
-      description: option.description,
-      status: option.status === "taken-pending" ? "taken" : option.status,
-      leads_to: option.leadsTo ?? null,
-      outcome: option.outcome ?? null,
-    })),
-  }));
+    : freeze({ ...map, steps, heading });

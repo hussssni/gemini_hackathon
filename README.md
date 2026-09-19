@@ -16,9 +16,11 @@ There is no setup walk. You start where you are, already lost.
    spot if you have stood here before, lists every way out it can actually see, and
    rates how promising each one looks for your destination.
 3. **It picks one and says it aloud**, and drops a marker over the camera feed at
-   the bearing it means. Each frame of the pan is tagged with the compass heading it
-   was shot at, and Gemini says which frame an exit appears in — so the bearing is a
-   real sensor reading, not a guess. The marker is pinned to that bearing rather than
+   the bearing it means. Frames are taken each time the phone turns another ~40°,
+   each tagged with the tilt-compensated heading of the rear camera. Gemini says
+   which frame an exit is in *and where across that frame*, and the offset is
+   converted to degrees using the camera's real field of view — so the bearing is a
+   sensor reading, not a guess. The marker is pinned to that bearing rather than
    to the screen, so turning the phone sweeps it across the view until it settles on
    the way to walk. "Take the left path" stops meaning anything the moment you turn
    around; a marker you can physically hunt for does not.
@@ -27,9 +29,20 @@ There is no setup walk. You start where you are, already lost.
    shot — you say up front what you are trying to find, and every survey is checked
    against it.
 
-The map grows a node at a time. Dashed stubs show the ways nobody has taken yet, so
-at a glance you can see where there is still left to try — and the highlighted one is
-what Gemini suggests next.
+The map grows a node at a time, and every decision is drawn on it. Forks are
+numbered diamonds (F1, F2…) with each branch labelled L, A or R as first walked into.
+Walked branches are solid teal with an arrow showing which way you went; failed ones
+(dead end, loops back, fully tried) are dashed rose with a ✕; untried ones are dashed
+amber; the branch you are being sent down right now is bold pink, and a white arrow
+shows where dead reckoning puts you.
+
+### Decisions are enforced, not hoped for
+
+Gemini judges which untried way looks most promising, but the rules are applied on
+the phone over the map: the way you came in is recorded as the way back and is never
+suggested as new; a branch known to fail is never picked; and when nothing is left
+at a place, it routes you over known links back to the nearest fork that still has
+an untried branch — "Head back to fork 1, where a path is still untried."
 
 ### Built to be used without looking
 
@@ -51,8 +64,9 @@ edges, that whole band is one instruction: turn around.
 
 ### It remembers
 
-Each place also keeps a small reference photo, and the ones you are most likely to
-walk back into are sent along with the next pan so Gemini can compare them side by
+Each place keeps three small reference photos facing different ways, and the places
+nearest to where dead reckoning says you are (or the one you were sent back to) are
+sent along with the next pan so Gemini can compare them side by
 side. Recognising somewhere is a visual judgement, not a matter of how well two
 written descriptions happen to agree — a place recorded only as "a clearing" is
 still recognisable from its photograph.
@@ -94,6 +108,7 @@ Requires Node 20.6 or newer.
 npm install
 cp .env.example .env     # then paste your key into .env
 npm start                # http://localhost:3000
+npm test                 # logic and API tests, no Gemini quota used
 ```
 
 Get a key from [Google AI Studio](https://aistudio.google.com/apikey). `.env` is

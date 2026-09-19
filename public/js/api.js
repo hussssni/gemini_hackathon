@@ -22,5 +22,4 @@ async function post(path, body) {
   return payload;
 }
 
-export const survey = ({ frames, nodes, destination, memory }) =>
-  post("/api/survey", { frames, nodes, destination, memory });
+export const survey = (body) => post("/api/survey", body);

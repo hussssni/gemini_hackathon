@@ -76,6 +76,24 @@ h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color
   border-radius: 999px;
 }
 
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.legend li { display: flex; align-items: center; gap: 6px; }
+.key { display: inline-block; width: 16px; height: 0; border-top: 3px solid; }
+.key-fork { width: 10px; height: 10px; border: none; background: var(--warn); transform: rotate(45deg); }
+.key-chosen { border-color: #f472b6; }
+.key-walked { border-color: var(--accent); }
+.key-untried { border-top-style: dashed; border-color: var(--warn); }
+.key-failed { border-top-style: dashed; border-color: var(--danger); }
+
 .stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -220,6 +238,13 @@ h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color
 .option-promise { font-size: 0.72rem; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
 .option p { grid-column: 1 / -1; margin: 0; font-size: 0.88rem; color: var(--muted); }
 .option.is-pick p { color: var(--text); }
+.option.is-pick .option-direction { color: #f472b6; }
+.option[data-state="dead-end"], .option[data-state="loops-back"], .option[data-state="exhausted"] {
+  border-left-color: var(--danger);
+  opacity: 0.7;
+}
+.option[data-state="way-back"] { opacity: 0.6; }
+.option-direction { text-transform: capitalize; }
 
 .replay { flex: none; width: 100%; margin-top: 14px; padding: 10px; }
 

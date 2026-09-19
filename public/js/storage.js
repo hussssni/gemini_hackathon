@@ -1,4 +1,5 @@
-const KEY = "breadcrumb.map.v1";
+// v2 changed the shape of places and branches; a v1 map is simply not loaded.
+const KEY = "breadcrumb.map.v2";
 
 /**
  * Maps persist between visits, so walking into somewhere you have explored
@@ -14,7 +15,7 @@ const KEEP_REFERENCES_FOR = 12;
 const trimReferences = (nodes) => {
   const cutoff = nodes.length - KEEP_REFERENCES_FOR;
   return nodes.map((node, index) =>
-    index >= cutoff ? node : { ...node, reference: null });
+    index >= cutoff ? node : { ...node, references: [] });
 };
 
 export function saveMap(map) {
@@ -32,7 +33,7 @@ export function saveMap(map) {
     // Out of room: the places and their links matter more than the photos.
     console.warn("Could not save the map with references, retrying without", err);
     try {
-      write(map.nodes.map((node) => ({ ...node, reference: null })));
+      write(map.nodes.map((node) => ({ ...node, references: [] })));
     } catch (fallbackErr) {
       console.warn("Could not save the map", fallbackErr);
     }
@@ -46,6 +47,10 @@ export function loadMap() {
 
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed?.nodes) || parsed.nodes.length === 0) return null;
+    // Anything malformed is dropped rather than half-loaded into the map.
+    const valid = parsed.nodes.every((node) => typeof node?.id === "string"
+      && Number.isFinite(node.x) && Number.isFinite(node.y) && Array.isArray(node.options));
+    if (!valid) return null;
 
     return {
       savedAt: parsed.savedAt ?? null,

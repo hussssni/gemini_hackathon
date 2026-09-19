@@ -1,23 +1,22 @@
-import { LOST } from "./config.js";
 import { createBudget } from "./budget.js";
-import { createCamera, frameAt, referenceShot } from "./camera.js";
+import { createCamera } from "./camera.js";
 import { createSensorTracker, requestSensorAccess } from "./sensors.js";
 import { survey } from "./api.js";
 import { drawMap } from "./map.js";
 import { createMarker } from "./marker.js";
+import { capturePan } from "./pan.js";
 import { primeSpeech, speak, stopSpeaking } from "./speech.js";
-import { bearingDelta, directionSentence, turnPhrase } from "./guidance.js";
-import {
-  addSurvey, commitRecommendation, emptyMap, fromSaved,
-  selectReferences, toServerNodes, trackMotion, unexploredCount,
-} from "./graph.js";
+import { turnPhrase } from "./guidance.js";
+import { addSurvey, commitChoice, emptyMap, fromSaved, trackMotion } from "./graph.js";
+import { decide } from "./decide.js";
+import { narrate } from "./narrate.js";
+import { selectReferences, serverArrival, toServerNodes } from "./recall.js";
+import { markerLabel, stats, surveyView } from "./present.js";
 import { clearMap, describeAge, loadMap, saveMap } from "./storage.js";
 import {
   clearArrived, clearSurvey, elements, renderStats, renderSurvey,
   setBusy, setStatus, showArrived, showError,
 } from "./ui.js";
-
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Long enough that turning slowly does not produce a stream of instructions.
 const GUIDANCE_MIN_GAP_MS = 1500;
@@ -28,18 +27,20 @@ const marker = createMarker({
   root: elements.marker,
   ring: elements.markerRing,
   label: elements.markerLabel,
+  getFov: () => camera.horizontalFov(),
 });
 
 let map = emptyMap();
-let lastSurvey = null;
+// The last survey, the decision made from it, and what was said about it.
+let last = null;
 let surveying = false;
 let guidance = { zone: null, spokenAt: 0 };
+// Whether the phone is reporting a real compass heading.
+let compassLive = false;
 
 function render() {
-  renderStats(map, unexploredCount(map));
-  drawMap(elements.canvas, map, {
-    recommendedBearing: lastSurvey?.recommendation?.bearing ?? null,
-  });
+  renderStats(stats(map));
+  drawMap(elements.canvas, map);
 }
 
 /**
@@ -61,6 +62,7 @@ function announceTurn(state) {
 const sensors = createSensorTracker({
   onUpdate: (snapshot) => {
     map = trackMotion(map, snapshot);
+    compassLive = snapshot.hasHeading;
     // Redrawing the marker on every heading tick is what keeps it pinned to the
     // world rather than the screen.
     announceTurn(marker.update(snapshot.heading));
@@ -68,21 +70,6 @@ const sensors = createSensorTracker({
   },
   onError: showError,
 });
-
-/**
- * Grabs a spread of frames while the explorer pans, tagging each with the
- * heading it was shot at. Those headings are what let an exit seen in a photo
- * become a bearing the marker can point at afterwards.
- */
-async function capturePanorama() {
-  const frames = [];
-  for (let index = 0; index < LOST.PAN_FRAMES; index += 1) {
-    setStatus(`Keep panning — frame ${index + 1} of ${LOST.PAN_FRAMES}`, "busy");
-    frames.push(frameAt(camera, map.heading));
-    if (index < LOST.PAN_FRAMES - 1) await delay(LOST.PAN_INTERVAL_MS);
-  }
-  return frames;
-}
 
 async function begin() {
   setBusy(true);
@@ -104,10 +91,57 @@ async function begin() {
   }
 }
 
+function readDestination() {
+  const destination = elements.destination.value.trim();
+  if (!destination) {
+    elements.destination.focus();
+    showError("Say what you are trying to find first, so it knows when you have got there.");
+  }
+  return destination;
+}
+
+/** Everything the model needs besides the photos: the map and how we got here. */
+const surveyContext = (destination) => ({
+  destination,
+  nodes: toServerNodes(map),
+  memory: selectReferences(map),
+  arrival: serverArrival(map),
+  expected_node_id: map.pending?.expectedId ?? null,
+});
+
+/** Acts on a decision: point the marker, say it, and show it. */
+function act(result, decision, destination) {
+  const spoken = decision.kind === "arrived"
+    ? `You have reached ${destination}. ${result.spoken}`
+    : narrate({ map, decision, survey: result, heading: map.heading });
+
+  last = { result, decision, destination };
+  renderSurvey(surveyView({ map, survey: result, decision, spoken }));
+  clearArrived();
+
+  if (decision.kind === "arrived") {
+    marker.clear();
+    showArrived(destination);
+    setStatus("You made it", "good");
+  } else if (decision.kind === "stuck") {
+    marker.clear();
+    setStatus("Everything nearby is tried", "warn");
+  } else {
+    marker.setTarget(decision.bearing, markerLabel(map, decision));
+    setStatus(decision.kind === "backtrack"
+      ? "Head back, then look around again"
+      : "Follow the marker, then look around again", "good");
+  }
+
+  speak(spoken);
+  guidance = { zone: null, spokenAt: Date.now() };
+  announceTurn(marker.update(map.heading));
+}
+
 /**
- * One stop in the exploration loop: pan, let Gemini read the surroundings, add
- * what it found to the map, and act on what it suggests. Walk that way, then
- * run it again — the map grows a node at a time.
+ * One stop in the exploration loop: pan, let Gemini read the surroundings,
+ * fold what it found into the map, decide, and say where to go. Walk that way,
+ * then run it again — the map grows a place at a time.
  */
 async function lookAround() {
   if (!camera.isRunning()) {
@@ -119,70 +153,45 @@ async function lookAround() {
     showError(`Out of Gemini requests for now. Try again in ${Math.ceil(budget.resetsInMs() / 1000)}s.`);
     return;
   }
-
-  const destination = elements.destination.value.trim();
-  if (!destination) {
-    elements.destination.focus();
-    showError("Say what you are trying to find first, so it knows when you have got there.");
-    return;
-  }
+  const destination = readDestination();
+  if (!destination) return;
 
   surveying = true;
   setBusy(true);
   stopSpeaking();
+  marker.clear();
+  speak(compassLive
+    ? "Hold the phone up and turn slowly all the way round. Take your time."
+    : "Hold the phone up and turn all the way round, about one step each second.");
 
   try {
-    const frames = await capturePanorama();
+    const { frames, references } = await capturePan({
+      camera,
+      readHeading: () => map.heading,
+      hasCompass: () => compassLive,
+      // A short buzz per photo lets someone pace the turn without the screen.
+      onFrame: () => navigator.vibrate?.(25),
+      onProgress: (done, total) => setStatus(`Keep turning slowly — ${done} of ${total}`, "busy"),
+    });
 
     setStatus("Reading the surroundings…", "busy");
     budget.spend();
-    const result = await survey({
-      frames,
-      nodes: toServerNodes(map),
-      destination,
-      memory: selectReferences(map),
-    });
+    const result = await survey({ frames, fov: camera.horizontalFov(), ...surveyContext(destination) });
 
     map = addSurvey(map, result, {
-      heading: Math.round(map.heading),
+      heading: map.heading,
       steps: map.steps,
-      // Keep a small shot of this place so a later visit can be recognised by
-      // sight rather than by how well two written descriptions happen to agree.
-      reference: referenceShot(camera),
+      references,
+      facing: frames[0].heading,
     });
-    if (result.recommendation) {
-      map = commitRecommendation(map, result.recommendation.option_index);
+    const decision = decide(map, result);
+    if (decision.kind === "explore" || decision.kind === "backtrack") {
+      map = commitChoice(map, decision);
     }
     saveMap(map);
 
-    lastSurvey = result;
-    renderSurvey(result, map);
-
-    if (result.arrived) {
-      marker.clear();
-      clearArrived();
-      showArrived(destination);
-      speak(`You have reached ${destination}. ${result.spoken}`);
-      setStatus("You made it", "good");
-    } else if (result.recommendation) {
-      // The bearing came from the compass reading of the photo the exit appears
-      // in, so the marker points where the camera actually saw it.
-      marker.setTarget(result.recommendation.bearing, "Go this way");
-      // Lead with the turn, measured from where they are actually standing, so
-      // the first thing heard is something to do rather than something to see.
-      const delta = bearingDelta(result.recommendation.bearing, map.heading);
-      speak(directionSentence(delta, result.spoken));
-      guidance = { zone: null, spokenAt: Date.now() };
-      announceTurn(marker.update(map.heading));
-      clearArrived();
-      setStatus("Follow the marker, then look around again", "good");
-    } else {
-      marker.clear();
-      clearArrived();
-      speak(`Dead end. ${result.spoken} Go back the way you came.`);
-      setStatus("Dead end — go back", "warn");
-    }
-
+    surveying = false;
+    act(result, decision, destination);
     render();
   } catch (err) {
     console.error(err);
@@ -194,6 +203,14 @@ async function lookAround() {
   }
 }
 
+function replay() {
+  if (!last) return;
+  const { result, decision, destination } = last;
+  speak(decision.kind === "arrived"
+    ? `You have reached ${destination}.`
+    : narrate({ map, decision, survey: result, heading: map.heading }));
+}
+
 function reset() {
   stopSpeaking();
   sensors.stop();
@@ -201,7 +218,7 @@ function reset() {
   marker.clear();
   clearMap();
   map = emptyMap();
-  lastSurvey = null;
+  last = null;
   clearSurvey();
   setStatus("Ready", "neutral");
   render();
@@ -217,18 +234,13 @@ elements.lookButton.addEventListener("click", () => {
   primeSpeech();
   lookAround();
 });
-elements.replayButton.addEventListener("click", () => {
-  if (!lastSurvey) return;
-  const bearing = lastSurvey.recommendation?.bearing;
-  speak(bearing === undefined
-    ? lastSurvey.spoken
-    : directionSentence(bearingDelta(bearing, map.heading), lastSurvey.spoken));
-});
+elements.replayButton.addEventListener("click", replay);
 elements.resetButton.addEventListener("click", reset);
 elements.stepButton.addEventListener("click", () =>
   sensors.simulateStep(Number(elements.headingInput.value)));
 elements.headingInput.addEventListener("input", () => {
   map = trackMotion(map, { steps: map.steps, heading: Number(elements.headingInput.value) });
+  announceTurn(marker.update(map.heading));
   render();
 });
 addEventListener("resize", render);
@@ -238,9 +250,7 @@ addEventListener("resize", render);
 function restoreSavedMap() {
   const saved = loadMap();
   if (!saved) return;
-
   map = fromSaved(saved);
-  render();
   setStatus(`Remembered ${map.nodes.length} places from ${describeAge(saved.savedAt)}`, "good");
 }
 

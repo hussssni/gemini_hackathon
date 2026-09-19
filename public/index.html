@@ -36,10 +36,18 @@
       </div>
     </section>
 
+    <ul class="legend" aria-label="Map key">
+      <li><i class="key key-fork"></i>Fork</li>
+      <li><i class="key key-chosen"></i>Going now</li>
+      <li><i class="key key-walked"></i>Walked</li>
+      <li><i class="key key-untried"></i>Untried</li>
+      <li><i class="key key-failed"></i>Failed</li>
+    </ul>
+
     <dl class="stats">
       <div><dt>Places</dt><dd id="places">0</dd></div>
-      <div><dt>Leads left</dt><dd id="leads">0</dd></div>
-      <div><dt>Steps</dt><dd id="steps">0</dd></div>
+      <div><dt>Forks</dt><dd id="forks">0</dd></div>
+      <div><dt>Untried</dt><dd id="leads">0</dd></div>
     </dl>
 
     <section id="survey" class="survey" hidden>
@@ -49,7 +57,7 @@
       </div>
       <p id="survey-spoken" class="survey-spoken"></p>
       <p id="survey-here" class="survey-here"></p>
-      <h3>Ways out</h3>
+      <h3>Ways out of here</h3>
       <ul id="survey-options" class="options"></ul>
       <button id="replay" type="button" class="ghost replay">Say it again</button>
     </section>

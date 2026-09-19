@@ -10,7 +10,7 @@ export const elements = {
   status: byId("status"),
   places: byId("places"),
   leads: byId("leads"),
-  steps: byId("steps"),
+  forks: byId("forks"),
   survey: byId("survey"),
   surveyBadge: byId("survey-badge"),
   surveySpoken: byId("survey-spoken"),
@@ -45,56 +45,59 @@ export function showError(message) {
   }, 6000);
 }
 
-export function renderStats(map, leads) {
-  elements.places.textContent = String(map.nodes.length);
-  elements.leads.textContent = String(leads);
-  elements.steps.textContent = String(map.steps);
+export function renderStats({ places, forks, untried }) {
+  elements.places.textContent = String(places);
+  elements.forks.textContent = String(forks);
+  elements.leads.textContent = String(untried);
 }
 
-const COMPASS_POINTS = Object.freeze(["N", "NE", "E", "SE", "S", "SW", "W", "NW"]);
+const STATE_LABELS = Object.freeze({
+  untried: "untried",
+  "way-back": "way you came",
+  "dead-end": "dead end",
+  "loops-back": "loops back",
+  exhausted: "all tried",
+  open: "walked",
+});
 
-/** Bearings are exact but unreadable; a compass point is what a person wants. */
-const compassPoint = (bearing) =>
-  COMPASS_POINTS[Math.round((((bearing % 360) + 360) % 360) / 45) % 8];
-
-function optionRow(option, isRecommended) {
+/**
+ * One row per way out of this place, as the map now knows it: which side it
+ * is on, what came of it, and whether it is the one being taken.
+ */
+function optionRow({ side, state, description, promise, isPick }) {
   const item = document.createElement("li");
   item.className = "option";
-  if (isRecommended) item.classList.add("is-pick");
+  item.dataset.state = state;
+  if (isPick) item.classList.add("is-pick");
 
   const direction = document.createElement("span");
   direction.className = "option-direction";
-  direction.textContent = compassPoint(option.bearing);
+  direction.textContent = isPick ? `${side} · take this` : side;
+
+  const tag = document.createElement("span");
+  tag.className = "option-promise";
+  tag.textContent = state === "untried"
+    ? `${STATE_LABELS[state]} · ${Math.round((promise ?? 0) * 100)}%`
+    : STATE_LABELS[state] ?? state;
 
   const text = document.createElement("p");
-  text.textContent = option.description;
+  text.textContent = description;
 
-  const promise = document.createElement("span");
-  promise.className = "option-promise";
-  promise.textContent = `${Math.round((option.promise ?? 0) * 100)}%`;
-
-  item.append(direction, promise, text);
+  item.append(direction, tag, text);
   return item;
 }
 
-export function renderSurvey(result, map) {
-  const recommendedIndex = result.recommendation?.option_index ?? null;
-
-  elements.surveyBadge.textContent = result.arrived
-    ? "Arrived"
-    : `${map.nodes.length} mapped · ${Math.round(result.confidence * 100)}% sure`;
-  elements.surveyBadge.dataset.tone = result.arrived
-    ? "good"
-    : result.confidence < 0.4 ? "warn" : "neutral";
-
-  elements.surveySpoken.textContent = result.spoken;
-  elements.surveyHere.textContent = result.here.description;
-
-  elements.surveyOptions.replaceChildren(
-    ...(result.options ?? []).map((option, index) =>
-      optionRow(option, index + 1 === recommendedIndex)),
-  );
-
+/**
+ * @param view.badge  e.g. "Fork 2 · 70% sure"
+ * @param view.spoken the sentence that was read aloud
+ * @param view.rows   branches, already described by the caller
+ */
+export function renderSurvey({ badge, tone, spoken, here, rows }) {
+  elements.surveyBadge.textContent = badge;
+  elements.surveyBadge.dataset.tone = tone;
+  elements.surveySpoken.textContent = spoken;
+  elements.surveyHere.textContent = here;
+  elements.surveyOptions.replaceChildren(...rows.map(optionRow));
   elements.survey.hidden = false;
 }
 

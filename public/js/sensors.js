@@ -1,4 +1,5 @@
 import { SENSORS } from "./config.js";
+import { cameraHeading, smoothHeading } from "./heading.js";
 
 // iOS 13+ gates motion and orientation behind a permission call that must
 // happen inside a user gesture. Android and desktop Chrome grant it silently.
@@ -28,14 +29,17 @@ function magnitude({ x = 0, y = 0, z = 0 } = {}) {
   return Math.sqrt(x * x + y * y + z * z);
 }
 
-// Compass heading in degrees clockwise from north, or null if unavailable.
+/**
+ * Where the rear camera points, degrees clockwise from north, or null.
+ * iOS reports a ready-made compass heading. Everywhere else, only an absolute
+ * reading is usable, and it is tilt-compensated: the old 360 - alpha was only
+ * right with the phone held perfectly upright.
+ */
 function readHeading(event) {
   if (typeof event.webkitCompassHeading === "number") {
     return event.webkitCompassHeading;
   }
-  if (event.absolute === true && typeof event.alpha === "number") {
-    return (360 - event.alpha) % 360;
-  }
+  if (event.absolute === true) return cameraHeading(event);
   return null;
 }
 
@@ -77,7 +81,7 @@ export function createSensorTracker({ onUpdate, onError }) {
   const handleOrientation = (event) => {
     const next = readHeading(event);
     if (next === null || Number.isNaN(next)) return;
-    heading = next;
+    heading = smoothHeading(hasHeading ? heading : null, next, SENSORS.HEADING_SMOOTHING);
     hasHeading = true;
     emit();
   };

@@ -57,3 +57,25 @@ export function directionSentence(delta, description) {
 
   return description ? `${lead} ${description}` : lead;
 }
+
+/**
+ * Names a direction against the way someone is going, the way a person would
+ * give it at a junction: "the left path", "the one ahead". Used for branches,
+ * where the reference is the way the explorer walked in, not the phone.
+ */
+export function relativeSide(bearing, reference) {
+  const delta = bearingDelta(bearing, reference);
+  const magnitude = Math.abs(delta);
+  if (magnitude <= 25) return "ahead";
+  if (magnitude >= 150) return "behind";
+  const side = sideOf(delta);
+  return magnitude <= 60 ? `bear ${side}` : side;
+}
+
+/** One letter for the map: L, R, A (ahead) or B (behind). */
+export function sideLetter(bearing, reference) {
+  const side = relativeSide(bearing, reference);
+  if (side === "ahead") return "A";
+  if (side === "behind") return "B";
+  return side.endsWith("left") ? "L" : "R";
+}
